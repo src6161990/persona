@@ -1,0 +1,28 @@
+[project]
+name = "persona"
+version = "0.1.0"
+description = "통화 데이터 기반 사용자 페르소나 서비스 (DeepAgent + FastAPI)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "deepagents>=0.0.5",
+    "langchain-anthropic>=0.3",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

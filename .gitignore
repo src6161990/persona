@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# 환경 변수 (API 키 포함)
+.env
+
+# uv
+uv.lock
+
+# IDE
+.idea/
+.vscode/
+
+
+*.pyc
+.secrets.baseline
+dist/
+build/
+
+# local cache
+cache/*.db
+cache/*.json
+
+# OS
+.DS_Store
+
+# results
+results/
+
+# trace dump (AGENT_HARNESS_API_TRACE_DUMP_DIR 로컬 디버깅 산출물)
+.trace/
+
+# exported datasets
+gaia_validation_set.md
+gaia_validation_set.json
+
+# Backup files
+*.bak
+
+CLAUDE.local.md
+.coverage
+temp/
+
+# playwright-mcp scratch output
+.playwright-mcp/
