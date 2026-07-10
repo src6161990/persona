@@ -8,16 +8,27 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "deepagents>=0.0.5",
+    "langchain>=0.3",
+    # 기본 프로바이더(anthropic) 통합. 다른 프로바이더는 아래 extras 로 설치.
     "langchain-anthropic>=0.3",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "python-dotenv>=1.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
+# 프로바이더 교체용 extras. 필요한 프로바이더만 설치.
+#   uv sync --extra openai       (openai / azure_openai)
+#   uv sync --extra databricks   (databricks serving endpoint)
+openai = [
+    "langchain-openai>=0.2",
+]
+databricks = [
+    "langchain-openai>=0.2",
+]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
 ]
 
 [build-system]

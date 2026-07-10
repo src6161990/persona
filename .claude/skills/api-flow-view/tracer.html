@@ -1,0 +1,795 @@
+<title>Persona Service · API Flow Tracer</title>
+<style>
+  :root {
+    /* light (base) — cool slate neutrals with a slight blue bias */
+    --bg: #EEF1F4;
+    --panel: #FFFFFF;
+    --panel-2: #F4F6F8;
+    --stripe: rgba(20, 32, 44, 0.028);
+    --line: #DCE2E8;
+    --line-strong: #C7D0D8;
+    --text: #182029;
+    --dim: #55636E;
+    --faint: #8B99A5;
+    --accent: #B7710A;          /* amber signal (darkened for light ground) */
+    --accent-bg: rgba(183, 113, 10, 0.10);
+    --accent-line: rgba(183, 113, 10, 0.42);
+    --on-accent: #ffffff;
+    --ok: #17845C;
+    --ok-bg: rgba(23, 132, 92, 0.10);
+    --err: #C4383F;
+    --err-bg: rgba(196, 56, 63, 0.10);
+    --shadow: 0 1px 2px rgba(20,32,44,.06), 0 8px 24px rgba(20,32,44,.06);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0D1116;
+      --panel: #151B22;
+      --panel-2: #1A222A;
+      --stripe: rgba(255, 255, 255, 0.022);
+      --line: #262F39;
+      --line-strong: #333E49;
+      --text: #E5EAEF;
+      --dim: #9DAAB5;
+      --faint: #64727E;
+      --accent: #F2A93B;
+      --accent-bg: rgba(242, 169, 59, 0.13);
+      --accent-line: rgba(242, 169, 59, 0.50);
+      --on-accent: #12161b;
+      --ok: #46B98A;
+      --ok-bg: rgba(70, 185, 138, 0.14);
+      --err: #E5646B;
+      --err-bg: rgba(229, 100, 107, 0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#EEF1F4;--panel:#FFFFFF;--panel-2:#F4F6F8;--stripe:rgba(20,32,44,.028);
+    --line:#DCE2E8;--line-strong:#C7D0D8;--text:#182029;--dim:#55636E;--faint:#8B99A5;
+    --accent:#B7710A;--accent-bg:rgba(183,113,10,.10);--accent-line:rgba(183,113,10,.42);--on-accent:#fff;
+    --ok:#17845C;--ok-bg:rgba(23,132,92,.10);--err:#C4383F;--err-bg:rgba(196,56,63,.10);
+    --shadow:0 1px 2px rgba(20,32,44,.06),0 8px 24px rgba(20,32,44,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0D1116;--panel:#151B22;--panel-2:#1A222A;--stripe:rgba(255,255,255,.022);
+    --line:#262F39;--line-strong:#333E49;--text:#E5EAEF;--dim:#9DAAB5;--faint:#64727E;
+    --accent:#F2A93B;--accent-bg:rgba(242,169,59,.13);--accent-line:rgba(242,169,59,.50);--on-accent:#12161b;
+    --ok:#46B98A;--ok-bg:rgba(70,185,138,.14);--err:#E5646B;--err-bg:rgba(229,100,107,.14);
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 22px clamp(14px, 3vw, 32px) 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 100%;
+  }
+
+  /* header */
+  header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand h1 {
+    font-size: clamp(19px, 2.4vw, 25px);
+    margin: 0;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    font-weight: 650;
+  }
+  .brand .sub { color: var(--dim); margin-top: 4px; font-size: 13px; }
+  .brand .sub code { font-family: var(--mono); color: var(--accent); font-size: 12px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; }
+  .themebtn {
+    font: inherit; font-size: 12px; color: var(--dim); cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 11px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .themebtn:hover { border-color: var(--line-strong); color: var(--text); }
+
+  /* layout */
+  .layout { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* sidebar */
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  .rail .grp-label {
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--faint); font-weight: 650; padding: 0 4px 6px; margin-top: 4px;
+  }
+  .eplist { display: flex; flex-direction: column; gap: 6px; }
+  @media (max-width: 900px) {
+    .eplist { flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
+    .ep { min-width: 220px; }
+  }
+  .ep {
+    text-align: left; font: inherit; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+    padding: 11px 12px; display: flex; flex-direction: column; gap: 5px;
+    transition: border-color .15s, background .15s, transform .1s;
+  }
+  .ep:hover { border-color: var(--line-strong); }
+  .ep:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ep.active { border-color: var(--accent-line); background: var(--accent-bg); }
+  .ep .r1 { display: flex; align-items: center; gap: 8px; }
+  .ep .name { font-weight: 600; font-size: 13.5px; }
+  .ep .path { font-family: var(--mono); font-size: 11px; color: var(--dim); word-break: break-all; }
+  .ep.active .path { color: var(--text); }
+  .method {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .03em;
+    padding: 2px 6px; border-radius: 5px; flex: none;
+  }
+  .method.POST { color: var(--ok); background: var(--ok-bg); }
+  .method.GET  { color: var(--accent); background: var(--accent-bg); }
+  .sse-tag {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+    color: var(--accent); border: 1px solid var(--accent-line); border-radius: 5px;
+    padding: 1px 5px; margin-left: auto;
+  }
+
+  /* stage */
+  .stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .detail {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .detail .d-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .detail .d-path { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 600; }
+  .detail .d-purpose { color: var(--dim); margin-top: 8px; font-size: 13px; max-width: 78ch; }
+  .detail .d-result {
+    margin-top: 9px; font-family: var(--mono); font-size: 11.5px; color: var(--ok);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .detail .d-result::before { content: "→"; color: var(--faint); }
+
+  /* controls */
+  .controls {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px;
+  }
+  .btn {
+    font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .12s, background .12s;
+  }
+  .btn:hover { border-color: var(--line-strong); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .ctrl-spacer { flex: 1 1 auto; }
+  .counter { font-family: var(--mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .speed { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .speed button {
+    font: inherit; font-size: 11.5px; font-family: var(--mono); cursor: pointer;
+    background: var(--panel-2); color: var(--dim); border: 0; padding: 6px 9px;
+  }
+  .speed button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+
+  /* canvas + log */
+  .work { display: grid; grid-template-columns: minmax(0,1fr) 292px; gap: 14px; align-items: stretch; }
+  @media (max-width: 1080px) { .work { grid-template-columns: 1fr; } }
+
+  .canvas-wrap {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+    box-shadow: var(--shadow); display: flex; overflow: hidden;
+  }
+  .gutter { flex: none; width: 118px; border-right: 1px solid var(--line); background: var(--panel); }
+  .gutter .glabel {
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 12px; border-bottom: 1px solid var(--stripe);
+  }
+  .gutter .glabel .gl-name { font-size: 12px; font-weight: 650; letter-spacing: .01em; }
+  .gutter .glabel .gl-sub { font-family: var(--mono); font-size: 9.5px; color: var(--faint); margin-top: 2px; line-height: 1.3; }
+  .scroll { overflow-x: auto; overflow-y: hidden; flex: 1 1 auto; }
+  .scene { position: relative; }
+  .scene .stripe { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--stripe); }
+  .scene .stripe.alt { background: var(--stripe); }
+  svg.edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  svg.edges path { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
+  svg.edges path.dashed { stroke-dasharray: 4 4; }
+
+  .node {
+    position: absolute; border: 1px solid var(--line-strong); background: var(--panel);
+    border-radius: 10px; padding: 8px 9px; display: flex; flex-direction: column; gap: 2px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    transition: border-color .2s, box-shadow .2s, transform .2s, background .2s;
+  }
+  .node .n-lane {
+    font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); font-weight: 700;
+  }
+  .node .n-fn { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--text); line-height: 1.25; }
+  .node .n-file { font-family: var(--mono); font-size: 9px; color: var(--faint); line-height: 1.2; }
+  .node .n-guard {
+    margin-top: 3px; font-size: 9px; font-family: var(--mono); color: var(--err);
+    background: var(--err-bg); border-radius: 4px; padding: 2px 4px; line-height: 1.25;
+  }
+  .node .n-loop {
+    margin-top: 3px; font-size: 9px; font-family: var(--mono); color: var(--accent);
+    border: 1px dashed var(--accent-line); border-radius: 4px; padding: 1px 4px; align-self: flex-start;
+  }
+  .node.done { border-color: var(--line); }
+  .node.done .n-fn { color: var(--dim); }
+  .node.active {
+    border-color: var(--accent); background: var(--accent-bg);
+    box-shadow: 0 0 0 3px var(--accent-bg), var(--shadow); transform: translateY(-1px); z-index: 4;
+  }
+  .node.active .n-lane { color: var(--accent); }
+  .node.kind-ok.active { border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg), var(--shadow); background: var(--ok-bg); }
+  .node.kind-ok.active .n-lane { color: var(--ok); }
+
+  .packet {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 4px var(--accent-bg), 0 0 14px 2px var(--accent);
+    margin: -6px 0 0 -6px; z-index: 6; opacity: 0; transition: opacity .2s;
+  }
+
+  /* log */
+  .log {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 320px; overflow: hidden;
+  }
+  .log h2 {
+    margin: 0; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+    padding: 12px 14px 9px; border-bottom: 1px solid var(--line); font-weight: 700;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .log .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
+  .log.running .dot { background: var(--ok); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .log-body { overflow-y: auto; padding: 8px 0; flex: 1 1 auto; font-family: var(--mono); font-size: 11.5px; }
+  .logline {
+    padding: 5px 14px; display: grid; grid-template-columns: 20px 1fr; gap: 8px;
+    border-left: 2px solid transparent; opacity: 0; transform: translateX(-4px);
+    animation: slidein .22s ease forwards;
+  }
+  @keyframes slidein { to { opacity: 1; transform: none; } }
+  .logline .idx { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .logline .lane-tag { font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .logline .ll-fn { color: var(--text); font-weight: 600; }
+  .logline .ll-desc { color: var(--dim); font-family: var(--sans); font-size: 11.5px; margin-top: 1px; }
+  .logline.k-ok { border-left-color: var(--ok); }
+  .logline.k-ok .lane-tag { color: var(--ok); }
+  .logline.k-guard { border-left-color: var(--err); }
+  .logline.k-guard .lane-tag, .logline.k-guard .ll-fn { color: var(--err); }
+  .logline.k-guard .ll-desc { color: var(--err); opacity: .85; }
+  .logline .lane-tag.api { color: var(--accent); }
+  .logline.k-loop { border-left-color: var(--accent); }
+  .logline .repeat { color: var(--accent); }
+
+  /* legend */
+  .legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; color: var(--dim); font-size: 11.5px; padding: 2px 4px; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--line-strong); }
+  .legend .sw.acc { background: var(--accent-bg); border-color: var(--accent-line); }
+  .legend .sw.ok { background: var(--ok-bg); border-color: var(--ok); }
+  .legend .sw.err { background: var(--err-bg); border-color: var(--err); }
+  .legend .sw.pk { background: var(--accent); box-shadow: 0 0 6px var(--accent); border: 0; border-radius: 50%; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .logline { animation: none; opacity: 1; transform: none; }
+    .packet { transition: none; }
+  }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Persona Service · API Flow Tracer</h1>
+      <div class="sub">엔드포인트를 고르면 요청이 <code>API → Service → Agent → Provider → Store</code> 계층을 타고 흐르는 경로를 재생합니다 · 현재 코드 기준</div>
+    </div>
+    <div class="toolbar">
+      <button class="themebtn" id="themeBtn" aria-label="테마 전환">◐ 테마</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" id="rail"></aside>
+
+    <section class="stage">
+      <div class="detail" id="detail"></div>
+
+      <div class="controls">
+        <button class="btn primary" id="playBtn">▶ 재생</button>
+        <button class="btn" id="stepBtn">▷ 한 단계</button>
+        <button class="btn" id="restartBtn">↻ 처음부터</button>
+        <div class="ctrl-spacer"></div>
+        <span class="counter" id="counter">0 / 0</span>
+        <div class="speed" role="group" aria-label="재생 속도">
+          <button data-sp="0.5">0.5×</button>
+          <button data-sp="1" aria-pressed="true">1×</button>
+          <button data-sp="2">2×</button>
+        </div>
+      </div>
+
+      <div class="work">
+        <div class="canvas-wrap">
+          <div class="gutter" id="gutter"></div>
+          <div class="scroll" id="scroll">
+            <div class="scene" id="scene">
+              <svg class="edges" id="edges"></svg>
+              <div class="packet" id="packet"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="log" id="logCard">
+          <h2><span class="dot"></span> Trace 로그</h2>
+          <div class="log-body" id="logBody"></div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="item"><span class="sw pk"></span> 요청 패킷</span>
+        <span class="item"><span class="sw acc"></span> 활성 단계</span>
+        <span class="item"><span class="sw ok"></span> 성공 응답 (2xx)</span>
+        <span class="item"><span class="sw err"></span> 가드 분기 (4xx)</span>
+        <span class="item">↻ 반복 / 스트리밍 루프</span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================================
+  // FLOW DATA — 코드에서 파생되는 유일한 편집 대상. 이 블록만 갱신하면 된다.
+  // (LANES = 아키텍처 계층 / ENDPOINTS = 각 API의 실제 호출 경로)
+  // 아래 CSS·재생 엔진은 손대지 말 것. 상세 규칙은 SKILL.md 참고.
+  // ============================================================================
+  const LANES = [
+    { id: "client",   name: "Client",   sub: "STT / TTS · 외부" },
+    { id: "api",      name: "API",      sub: "api/routes.py" },
+    { id: "service",  name: "Service",  sub: "services/*" },
+    { id: "agent",    name: "Agent",    sub: "agents/*" },
+    { id: "provider", name: "Provider", sub: "→ Databricks" },
+    { id: "store",    name: "Store",    sub: "store/* (mem)" },
+  ];
+  const laneIndex = Object.fromEntries(LANES.map((l, i) => [l.id, i]));
+
+  const ENDPOINTS = [
+    {
+      id: "build", method: "POST", group: "페르소나", name: "페르소나 구축",
+      path: "/personas/{user_id}/build",
+      purpose: "원시 통화 트랜스크립트와 AI 비서 상호작용을 LLM으로 분석해 사용자 페르소나 프로파일을 구조화 생성하고 저장한다.",
+      result: "201 · PersonaBuildResponse { persona }",
+      steps: [
+        { lane: "client",   fn: "POST …/build",        file: "요청 body", desc: "calls[], assistant_events[] — 원시 통화 데이터", kind: "req" },
+        { lane: "api",      fn: "build_persona()",      file: "api/routes.py", desc: "요청 수신 → persona_service 로 위임", kind: "call" },
+        { lane: "service",  fn: "build_persona()",      file: "services/persona_service.py", desc: "입력 검증 후 에이전트 오케스트레이션", kind: "call", guard: "if request.is_empty() → 400 EmptyBuildInput" },
+        { lane: "agent",    fn: "build_persona_agent()", file: "agents/persona_agent.py", desc: "create_deep_agent · response_format=PersonaProfile · PERSONA_BUILDER_PROMPT", kind: "call" },
+        { lane: "provider", fn: "get_chat_model()",     file: "providers/databricks.py", desc: "Databricks OAuth 토큰 발급 → Claude 구조화 출력 호출", kind: "call" },
+        { lane: "agent",    fn: "invoke_structured()",  file: "agents/persona_agent.py", desc: "structured_response → PersonaProfile 파싱", kind: "ret" },
+        { lane: "store",    fn: "persona_store.save()", file: "store/persona_store.py", desc: "user_id 키로 인메모리 저장", kind: "call" },
+        { lane: "client",   fn: "201 Created",          file: "응답", desc: "PersonaBuildResponse { persona }", kind: "ok" },
+      ],
+    },
+    {
+      id: "getPersona", method: "GET", group: "페르소나", name: "페르소나 조회",
+      path: "/personas/{user_id}",
+      purpose: "저장된 페르소나 프로파일을 user_id로 조회한다. 순수 조회 경로 — LLM 호출 없음.",
+      result: "200 · Persona",
+      steps: [
+        { lane: "client",  fn: "GET …/{user_id}",      file: "요청", desc: "path: user_id", kind: "req" },
+        { lane: "api",     fn: "get_persona()",         file: "api/routes.py", desc: "서비스로 위임", kind: "call" },
+        { lane: "service", fn: "get_persona()",         file: "services/persona_service.py", desc: "저장소 조회 후 존재 검증", kind: "call" },
+        { lane: "store",   fn: "persona_store.get()",   file: "store/persona_store.py", desc: "user_id 로 단건 조회", kind: "call", guard: "if None → 404 PersonaNotFound" },
+        { lane: "client",  fn: "200 OK",                file: "응답", desc: "Persona", kind: "ok" },
+      ],
+    },
+    {
+      id: "answer", method: "POST", group: "대신받기", name: "대신받기 한 턴", sse: true,
+      path: "/personas/{user_id}/answer-context",
+      purpose: "걸려온 전화 상대방의 발화(STT 결과 text)를 받아 페르소나/캐릭터 말투로 응답(text)을 실시간 생성해 SSE로 스트리밍한다. call_id로 통화 전체를 멀티턴으로 잇는다.",
+      result: "200 · text/event-stream (event: token × N → event: done)",
+      steps: [
+        { lane: "client",   fn: "POST …/answer-context", file: "요청 body", desc: "call_id, utterance(상대 발화), caller?", kind: "req" },
+        { lane: "api",      fn: "answer_context()",       file: "api/routes.py", desc: "answer_turn 호출(검증 즉시) → StreamingResponse 반환", kind: "call" },
+        { lane: "service",  fn: "answer_turn()",          file: "services/persona_service.py", desc: "캐릭터 우선, 없으면 페르소나 — 존재 확인", kind: "call", guard: "if 캐릭터·페르소나 모두 없음 → 404 PersonaNotFound" },
+        { lane: "store",    fn: "conversation_store.get()", file: "store/conversation_store.py", desc: "call_id 의 이전 턴 히스토리 로드 (멀티턴)", kind: "call" },
+        { lane: "service",  fn: "_answer_system_prompt()", file: "services/persona_service.py", desc: "ANSWER_TURN_PROMPT + 캐릭터/페르소나 JSON + caller 힌트 조립", kind: "build" },
+        { lane: "agent",    fn: "stream_reply()",         file: "agents/persona_agent.py", desc: "채팅 모델 .stream() 직접 호출 — deep agent 미사용(저지연)", kind: "call" },
+        { lane: "provider", fn: "model.stream()",         file: "→ Databricks Claude", desc: "응답 토큰 스트리밍", kind: "loop", loop: "event: token {delta} × N → SSE" },
+        { lane: "store",    fn: "conversation_store.append() ×2", file: "store/conversation_store.py", desc: "counterpart 발화 + assistant 응답 저장 → 다음 턴 문맥", kind: "call" },
+        { lane: "client",   fn: "event: done",            file: "SSE 종료", desc: "{ reply } → 바깥 파이프라인이 TTS 로 재생", kind: "ok" },
+      ],
+    },
+    {
+      id: "createChar", method: "POST", group: "캐릭터", name: "캐릭터 생성",
+      path: "/personas/{user_id}/character",
+      purpose: "저장된 페르소나를 바탕으로 '대신받기'가 연기할 대화형 캐릭터(말투·규칙·인사말)를 구조화 생성·저장한다.",
+      result: "201 · Character",
+      steps: [
+        { lane: "client",   fn: "POST …/character",       file: "요청", desc: "path: user_id (body 없음)", kind: "req" },
+        { lane: "api",      fn: "create_character()",      file: "api/routes.py", desc: "character_service 로 위임", kind: "call" },
+        { lane: "service",  fn: "create_character()",      file: "services/character_service.py", desc: "페르소나 존재 확인 후 캐릭터 생성", kind: "call", guard: "if 페르소나 없음 → 404 PersonaNotFound" },
+        { lane: "agent",    fn: "create_character_agent()", file: "agents/persona_agent.py", desc: "create_deep_agent · response_format=CharacterProfile · CHARACTER_CREATE_PROMPT", kind: "call" },
+        { lane: "provider", fn: "get_chat_model()",        file: "→ Databricks Claude", desc: "구조화 출력 호출", kind: "call" },
+        { lane: "agent",    fn: "invoke_structured()",     file: "agents/persona_agent.py", desc: "→ CharacterProfile", kind: "ret" },
+        { lane: "store",    fn: "character_store.save()",  file: "store/character_store.py", desc: "user_id 키로 저장", kind: "call" },
+        { lane: "client",   fn: "201 Created",             file: "응답", desc: "Character", kind: "ok" },
+      ],
+    },
+    {
+      id: "getChar", method: "GET", group: "캐릭터", name: "캐릭터 조회",
+      path: "/personas/{user_id}/character",
+      purpose: "저장된 캐릭터를 조회한다. 순수 조회 경로 — LLM 호출 없음.",
+      result: "200 · Character",
+      steps: [
+        { lane: "client",  fn: "GET …/character",        file: "요청", desc: "path: user_id", kind: "req" },
+        { lane: "api",     fn: "get_character()",         file: "api/routes.py", desc: "서비스로 위임", kind: "call" },
+        { lane: "service", fn: "get_character()",         file: "services/character_service.py", desc: "저장소 조회 후 존재 검증", kind: "call" },
+        { lane: "store",   fn: "character_store.get()",   file: "store/character_store.py", desc: "user_id 로 단건 조회", kind: "call", guard: "if None → 404 CharacterNotFound" },
+        { lane: "client",  fn: "200 OK",                  file: "응답", desc: "Character", kind: "ok" },
+      ],
+    },
+    {
+      id: "chat", method: "POST", group: "캐릭터", name: "캐릭터 수정 채팅",
+      path: "/personas/{user_id}/character/chat",
+      purpose: "멀티턴 대화로 캐릭터를 다듬는다. 에이전트가 도구(get_persona / get_current_character / save_character)를 ReAct 루프로 사용하며, thread_id로 이전 대화 맥락을 이어받는다.",
+      result: "200 · CharacterChatResponse { reply, character }",
+      steps: [
+        { lane: "client",   fn: "POST …/character/chat",   file: "요청 body", desc: "message — 캐릭터 수정 요청", kind: "req" },
+        { lane: "api",      fn: "character_chat()",         file: "api/routes.py", desc: "서비스로 위임", kind: "call" },
+        { lane: "service",  fn: "chat()",                   file: "services/character_service.py", desc: "캐릭터 존재 확인 · thread_id=character-chat:{user_id} (멀티턴 상태)", kind: "call", guard: "if 캐릭터 없음 → 404 CharacterNotFound" },
+        { lane: "agent",    fn: "character_chat_agent()",   file: "agents/persona_agent.py", desc: "create_deep_agent · tools 3종 · checkpointer(멀티턴)", kind: "call" },
+        { lane: "provider", fn: "invoke_text() ReAct",      file: "→ Databricks Claude", desc: "도구 호출 여부를 매 바퀴 판단하는 ReAct 루프", kind: "loop", loop: "get_persona · get_current_character · save_character" },
+        { lane: "store",    fn: "save_character (tool)",    file: "store/character_store.py", desc: "에이전트가 도구로 수정본 저장", kind: "call" },
+        { lane: "service",  fn: "character_store.get()",    file: "services/character_service.py", desc: "갱신 반영 위해 재조회", kind: "ret" },
+        { lane: "client",   fn: "200 OK",                   file: "응답", desc: "CharacterChatResponse { reply, character }", kind: "ok" },
+      ],
+    },
+  ];
+  // ============================ END FLOW DATA =================================
+
+  // layout constants
+  const COL_W = 200, CARD_W = 172, CARD_H = 74, LANE_H = 108, PAD_X = 26, PAD_TOP = 18;
+  const laneTop = (id) => PAD_TOP + laneIndex[id] * LANE_H;
+  const laneTagFor = (id) => ({ client: "CLI", api: "API", service: "SVC", agent: "AGT", provider: "LLM", store: "STO" }[id] || id);
+
+  const $ = (s) => document.querySelector(s);
+  const scene = $("#scene"), scroll = $("#scroll"), edges = $("#edges"),
+        packet = $("#packet"), gutter = $("#gutter"), rail = $("#rail"),
+        detail = $("#detail"), logBody = $("#logBody"), logCard = $("#logCard"),
+        counter = $("#counter"), playBtn = $("#playBtn");
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let current = ENDPOINTS[0];
+  let nodes = [];        // DOM nodes for current endpoint
+  let idx = -1;          // last completed step index
+  let playing = false;
+  let speed = 1;
+  let runToken = 0;      // cancels in-flight runs
+
+  // ---- sidebar ----
+  function buildRail() {
+    const groups = [];
+    ENDPOINTS.forEach((e) => {
+      let g = groups.find((x) => x.name === e.group);
+      if (!g) { g = { name: e.group, items: [] }; groups.push(g); }
+      g.items.push(e);
+    });
+    rail.innerHTML = "";
+    groups.forEach((g) => {
+      const gl = document.createElement("div");
+      gl.className = "grp-label"; gl.textContent = g.name;
+      rail.appendChild(gl);
+      const list = document.createElement("div");
+      list.className = "eplist";
+      g.items.forEach((e) => {
+        const b = document.createElement("button");
+        b.className = "ep" + (e === current ? " active" : "");
+        b.dataset.id = e.id;
+        b.innerHTML =
+          '<div class="r1"><span class="method ' + e.method + '">' + e.method + '</span>' +
+          '<span class="name">' + e.name + '</span>' +
+          (e.sse ? '<span class="sse-tag">SSE</span>' : '') + '</div>' +
+          '<div class="path">' + e.path + '</div>';
+        b.addEventListener("click", () => selectEndpoint(e));
+        list.appendChild(b);
+      });
+      rail.appendChild(list);
+    });
+  }
+
+  function markRail() {
+    document.querySelectorAll(".ep").forEach((b) => {
+      b.classList.toggle("active", b.dataset.id === current.id);
+    });
+  }
+
+  // ---- gutter (lane labels) ----
+  function buildGutter() {
+    gutter.innerHTML = "";
+    gutter.style.paddingTop = PAD_TOP + "px";
+    LANES.forEach((l) => {
+      const d = document.createElement("div");
+      d.className = "glabel";
+      d.style.height = LANE_H + "px";
+      d.innerHTML = '<div class="gl-name">' + l.name + '</div><div class="gl-sub">' + l.sub + '</div>';
+      gutter.appendChild(d);
+    });
+  }
+
+  // ---- scene render ----
+  function centerOf(i) {
+    const s = current.steps[i];
+    return { x: PAD_X + i * COL_W + CARD_W / 2, y: laneTop(s.lane) + CARD_H / 2 };
+  }
+
+  function renderScene() {
+    const n = current.steps.length;
+    const width = PAD_X * 2 + (n - 1) * COL_W + CARD_W;
+    const height = PAD_TOP * 2 + LANES.length * LANE_H;
+    scene.style.width = width + "px";
+    scene.style.height = height + "px";
+
+    // clear (keep svg + packet)
+    scene.querySelectorAll(".node, .stripe").forEach((el) => el.remove());
+
+    // lane stripes
+    LANES.forEach((l, i) => {
+      const st = document.createElement("div");
+      st.className = "stripe" + (i % 2 ? " alt" : "");
+      st.style.top = (PAD_TOP + i * LANE_H) + "px";
+      st.style.height = LANE_H + "px";
+      scene.appendChild(st);
+    });
+
+    // edges
+    edges.setAttribute("viewBox", "0 0 " + width + " " + height);
+    edges.setAttribute("width", width);
+    edges.setAttribute("height", height);
+    let ep = "";
+    for (let i = 1; i < n; i++) {
+      const a = centerOf(i - 1), b = centerOf(i);
+      const ax = a.x + CARD_W / 2 - 4, bx = b.x - CARD_W / 2 + 4;
+      const mx = (ax + bx) / 2;
+      const dashed = current.steps[i].kind === "ret" || current.steps[i].kind === "ok";
+      ep += '<path class="' + (dashed ? "dashed" : "") + '" d="M ' + ax + ' ' + a.y +
+            ' C ' + mx + ' ' + a.y + ' ' + mx + ' ' + b.y + ' ' + bx + ' ' + b.y + '"/>';
+    }
+    edges.innerHTML = ep;
+
+    // nodes
+    nodes = [];
+    current.steps.forEach((s, i) => {
+      const c = centerOf(i);
+      const el = document.createElement("div");
+      el.className = "node kind-" + s.kind;
+      el.style.left = (c.x - CARD_W / 2) + "px";
+      el.style.top = (c.y - CARD_H / 2) + "px";
+      el.style.width = CARD_W + "px";
+      el.style.minHeight = CARD_H + "px";
+      el.innerHTML =
+        '<div class="n-lane">' + laneTagFor(s.lane) + '</div>' +
+        '<div class="n-fn">' + s.fn + '</div>' +
+        '<div class="n-file">' + s.file + '</div>' +
+        (s.guard ? '<div class="n-guard">' + s.guard + '</div>' : '') +
+        (s.loop ? '<div class="n-loop">↻ ' + s.loop + '</div>' : '');
+      el.addEventListener("click", () => jumpTo(i));
+      scene.appendChild(el);
+      nodes.push(el);
+    });
+  }
+
+  // ---- log ----
+  const laneName = Object.fromEntries(LANES.map((l) => [l.id, l.name]));
+  function logStep(i) {
+    const s = current.steps[i];
+    const line = document.createElement("div");
+    let cls = "logline";
+    if (s.kind === "ok") cls += " k-ok";
+    else if (s.kind === "loop") cls += " k-loop";
+    line.className = cls;
+    const tagClass = s.lane === "api" ? "lane-tag api" : "lane-tag";
+    line.innerHTML =
+      '<span class="idx">' + String(i + 1).padStart(2, "0") + '</span>' +
+      '<span><span class="' + tagClass + '">' + laneName[s.lane] + '</span> ' +
+      '<span class="ll-fn">' + s.fn + '</span>' +
+      (s.loop ? ' <span class="repeat">↻</span>' : '') +
+      '<div class="ll-desc">' + s.desc + '</div></span>';
+    logBody.appendChild(line);
+    if (s.guard) {
+      const g = document.createElement("div");
+      g.className = "logline k-guard";
+      g.innerHTML = '<span class="idx">↳</span><span><span class="lane-tag">GUARD</span> ' +
+        '<span class="ll-fn">분기</span><div class="ll-desc">' + s.guard + '</div></span>';
+      logBody.appendChild(g);
+    }
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  // ---- playback ----
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  function setActive(i) {
+    nodes.forEach((el, k) => {
+      el.classList.toggle("active", k === i);
+      el.classList.toggle("done", k < i);
+    });
+    if (i >= 0) ensureVisible(i);
+    counter.textContent = (i + 1) + " / " + current.steps.length;
+  }
+
+  function ensureVisible(i) {
+    const c = centerOf(i);
+    const target = c.x - scroll.clientWidth / 2;
+    const max = scene.offsetWidth - scroll.clientWidth;
+    scroll.scrollTo({ left: Math.max(0, Math.min(max, target)), behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  function placePacket(i) {
+    const c = centerOf(i);
+    packet.style.left = c.x + "px";
+    packet.style.top = c.y + "px";
+  }
+
+  function animatePacket(from, to, dur) {
+    return new Promise((resolve) => {
+      if (reduceMotion || from < 0) { placePacket(to); resolve(); return; }
+      const a = centerOf(from), b = centerOf(to);
+      const t0 = performance.now();
+      const myToken = runToken;
+      function frame(now) {
+        if (myToken !== runToken) { resolve(); return; }
+        let t = Math.min(1, (now - t0) / dur);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+        // slight arc
+        const x = a.x + (b.x - a.x) * e;
+        const y = a.y + (b.y - a.y) * e - Math.sin(e * Math.PI) * 16;
+        packet.style.left = x + "px";
+        packet.style.top = y + "px";
+        if (t < 1) requestAnimationFrame(frame); else resolve();
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  async function advance() {
+    if (idx >= current.steps.length - 1) return false;
+    const from = idx, to = idx + 1;
+    const myToken = runToken;
+    packet.style.opacity = "1";
+    const s = current.steps[to];
+    const base = 620 / speed;
+    await animatePacket(from, to, base);
+    if (myToken !== runToken) return false;
+    idx = to;
+    setActive(idx);
+    logStep(idx);
+    // loop / stream: pulse a few times
+    if (s.kind === "loop" && !reduceMotion) {
+      for (let p = 0; p < 3; p++) {
+        if (myToken !== runToken) return false;
+        nodes[idx].classList.remove("active"); await sleep(90 / speed);
+        nodes[idx].classList.add("active"); await sleep(140 / speed);
+      }
+    }
+    return true;
+  }
+
+  async function run() {
+    if (playing) return;
+    if (idx >= current.steps.length - 1) resetRun(false);
+    playing = true; logCard.classList.add("running");
+    playBtn.textContent = "⏸ 일시정지";
+    const myToken = ++runToken;
+    while (playing && myToken === runToken && idx < current.steps.length - 1) {
+      const ok = await advance();
+      if (!ok || myToken !== runToken) break;
+      await sleep(360 / speed);
+    }
+    if (myToken === runToken) {
+      playing = false; logCard.classList.remove("running");
+      playBtn.textContent = idx >= current.steps.length - 1 ? "↻ 다시 재생" : "▶ 재생";
+      if (idx >= current.steps.length - 1) packet.style.opacity = "0";
+    }
+  }
+
+  function pause() {
+    playing = false; runToken++; logCard.classList.remove("running");
+    playBtn.textContent = "▶ 재생";
+  }
+
+  async function stepOnce() {
+    pause();
+    runToken++;
+    if (idx >= current.steps.length - 1) return;
+    packet.style.opacity = "1";
+    await advance();
+    playBtn.textContent = idx >= current.steps.length - 1 ? "↻ 다시 재생" : "▶ 재생";
+  }
+
+  function jumpTo(target) {
+    pause(); runToken++;
+    logBody.innerHTML = "";
+    idx = target;
+    for (let k = 0; k <= target; k++) logStep(k);
+    setActive(idx);
+    placePacket(idx);
+    packet.style.opacity = idx >= 0 ? "1" : "0";
+    playBtn.textContent = idx >= current.steps.length - 1 ? "↻ 다시 재생" : "▶ 재생";
+  }
+
+  function resetRun(clearActive) {
+    playing = false; runToken++; logCard.classList.remove("running");
+    idx = -1; logBody.innerHTML = "";
+    nodes.forEach((el) => el.classList.remove("active", "done"));
+    packet.style.opacity = "0";
+    placePacket(0);
+    counter.textContent = "0 / " + current.steps.length;
+    playBtn.textContent = "▶ 재생";
+    if (clearActive !== false) scroll.scrollTo({ left: 0, behavior: "auto" });
+  }
+
+  // ---- detail ----
+  function renderDetail() {
+    detail.innerHTML =
+      '<div class="d-top">' +
+        '<span class="method ' + current.method + '">' + current.method + '</span>' +
+        '<span class="d-path">' + current.path + '</span>' +
+        (current.sse ? '<span class="sse-tag">SSE 스트리밍</span>' : '') +
+      '</div>' +
+      '<div class="d-purpose">' + current.purpose + '</div>' +
+      '<div class="d-result">' + current.result + '</div>';
+  }
+
+  // ---- select ----
+  function selectEndpoint(e) {
+    if (e === current && nodes.length) { resetRun(); run(); return; }
+    current = e;
+    markRail();
+    renderDetail();
+    renderScene();
+    resetRun();
+    run();
+  }
+
+  // ---- controls ----
+  playBtn.addEventListener("click", () => { playing ? pause() : run(); });
+  $("#stepBtn").addEventListener("click", stepOnce);
+  $("#restartBtn").addEventListener("click", () => { resetRun(); run(); });
+  document.querySelectorAll(".speed button").forEach((b) => {
+    b.addEventListener("click", () => {
+      speed = parseFloat(b.dataset.sp);
+      document.querySelectorAll(".speed button").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    });
+  });
+
+  // ---- theme toggle ----
+  $("#themeBtn").addEventListener("click", () => {
+    const root = document.documentElement;
+    const cur = root.getAttribute("data-theme");
+    const isDark = cur ? cur === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", isDark ? "light" : "dark");
+  });
+
+  // ---- init ----
+  buildRail();
+  buildGutter();
+  renderDetail();
+  renderScene();
+  resetRun();
+  window.addEventListener("resize", () => { if (idx >= 0) ensureVisible(idx); });
+  // gentle autoplay on first load
+  setTimeout(run, 350);
+})();
+</script>

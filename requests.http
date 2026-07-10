@@ -1,0 +1,99 @@
+### persona 로컬 테스트용 HTTP 요청 모음 (PyCharm/IntelliJ HTTP Client)
+### 서버 실행: uv run uvicorn app.main:app --reload
+### 각 요청 위의 ▶(Run) 버튼으로 실행. build → character → chat → answer-context 순 권장.
+
+@baseUrl = http://127.0.0.1:8000
+@userId = u1
+
+### 0) 헬스체크
+GET {{baseUrl}}/health
+
+### 1) 페르소나 구축 (원시 통화 데이터를 body로 전달)
+POST {{baseUrl}}/personas/{{userId}}/build
+Content-Type: application/json
+
+{
+  "calls": [
+    {
+      "call_id": "c1",
+      "started_at": "2026-07-01T10:00:00+09:00",
+      "direction": "inbound",
+      "counterpart": "카페 사장",
+      "duration_seconds": 65,
+      "utterances": [
+        { "speaker": "counterpart", "text": "안녕하세요, 예약 확인 차 연락드렸어요." },
+        { "speaker": "user", "text": "네 안녕하세요, 오늘 오후 3시 4명 예약 맞습니다. 확인 부탁드려요." },
+        { "speaker": "counterpart", "text": "확인됐습니다. 창가 자리로 준비할게요." },
+        { "speaker": "user", "text": "감사합니다. 혹시 늦으면 미리 연락드릴게요." }
+      ]
+    },
+    {
+      "call_id": "c2",
+      "started_at": "2026-07-02T19:30:00+09:00",
+      "direction": "outbound",
+      "counterpart": "동생",
+      "duration_seconds": 240,
+      "utterances": [
+        { "speaker": "user", "text": "주말에 부모님 생신 뭐 할지 정하자. 난 조용한 식당이 좋아." },
+        { "speaker": "counterpart", "text": "오빠가 예약 좀 해줄 수 있어?" },
+        { "speaker": "user", "text": "그래, 내가 알아보고 오늘 안에 정해서 알려줄게." }
+      ]
+    }
+  ],
+  "assistant_events": [
+    {
+      "interaction_id": "a1",
+      "occurred_at": "2026-07-01T10:00:30+09:00",
+      "user_utterance": "이 예약 내 캘린더에 추가해줘",
+      "assistant_response": "오늘 15:00 카페 예약을 캘린더에 추가했습니다.",
+      "during_call_id": "c1"
+    }
+  ]
+}
+
+### 2) 페르소나 조회
+GET {{baseUrl}}/personas/{{userId}}
+
+### 3) 캐릭터 생성 (입력은 user_id 뿐, 저장된 페르소나 기반)
+POST {{baseUrl}}/personas/{{userId}}/character
+
+### 4) 캐릭터 조회
+GET {{baseUrl}}/personas/{{userId}}/character
+
+### 5) 캐릭터 수정 채팅 — 1턴 (멀티턴, thread 유지)
+POST {{baseUrl}}/personas/{{userId}}/character/chat
+Content-Type: application/json
+
+{ "message": "첫 인사말을 좀 더 밝고 친근하게 바꿔줘." }
+
+### 5-2) 캐릭터 수정 채팅 — 2턴 (이전 맥락 이어짐)
+POST {{baseUrl}}/personas/{{userId}}/character/chat
+Content-Type: application/json
+
+{ "message": "그리고 상대가 영업 전화면 정중히 거절하도록 규칙에 추가해줘." }
+
+### 6) AI 대신받기 — 한 턴 (상대 발화 text → 응답 text, SSE 스트리밍)
+### 상대방 발화(STT 결과)를 utterance 로 넣고, call_id 로 통화 전체를 멀티턴으로 잇는다.
+### purpose(용건)는 통화 전엔 모르므로 받지 않는다. caller 는 몰라도 됨(있으면 힌트).
+POST {{baseUrl}}/personas/{{userId}}/answer-context
+Accept: text/event-stream
+Content-Type: application/json
+
+{
+  "call_id": "call-1",
+  "utterance": "안녕하세요, 부재중이셔서 택배 어떻게 할까요?",
+  "caller": "택배기사"
+}
+
+### 6-2) 같은 call_id 로 다음 턴 (앞 대화 이어짐)
+POST {{baseUrl}}/personas/{{userId}}/answer-context
+Accept: text/event-stream
+Content-Type: application/json
+
+{
+  "call_id": "call-1",
+  "utterance": "그럼 경비실에 맡겨둘까요?"
+}
+
+### (참고) 페르소나 없이 캐릭터 생성 시 404 확인
+POST {{baseUrl}}/personas/unknown-user/character
