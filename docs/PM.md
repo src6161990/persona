@@ -10,7 +10,7 @@
 
 - **담당**: ①페르소나 구축 ②조회 ③대신받기 컨텍스트 생성 ④캐릭터 생성 ⑤캐릭터 멀티턴 수정 ⑥캐릭터 조회
 - **비담당(바운더리 밖)**: 통화요약·AI비서 원시데이터의 적재/저장, 통화 파이프라인 연동, 벡터DB
-- 스택: DeepAgents(LangChain/LangGraph) + FastAPI, 모델은 **프로바이더 격리**(기본 Claude `claude-opus-4-8`)
+- 스택: DeepAgents(LangChain/LangGraph) + FastAPI, 모델은 **프로바이더 격리**(기본 Databricks endpoint `databricks-claude-opus-4-6`)
 
 ## 2. 구현 현황
 
@@ -55,12 +55,12 @@
 ### 확정된 프로바이더/모델 설정
 - **프로바이더는 databricks 로 확정** (config 기본값도 databricks).
 - serving endpoint 이름 = 워크스페이스 목록 값. Claude 계열: `databricks-claude-opus-4-8` / `-opus-4-7` / `-fable-5` / `-sonnet-5` / `-haiku-4-5` 등.
-- `PERSONA_MODEL_NAME=databricks-claude-opus-4-8` (e2e 통과).
+- 기본값: `PERSONA_MODEL_NAME=databricks-claude-opus-4-6`.
 
 ## 5. 주요 결정 (Decision Log)
 
 - **DeepAgents 채택**: 사용자가 지정. LangChain/LangGraph 기반.
-- **모델 기본값 `claude-opus-4-8`**: 최신 권장 모델.
+- **모델 기본값 `databricks-claude-opus-4-6`**.
 - **프로바이더 격리**: 모델 벤더 미확정(OpenAI/Azure OpenAI/Databricks 가능성) → `ModelProvider` 포트로 분리, 교체는 설정만. 경계 타입 `BaseChatModel`.
   - anthropic/openai/azure_openai/google_genai: LangChain `init_chat_model`.
   - **Databricks**: serving endpoint 가 OpenAI 호환 → `get_databricks_token`(OAuth M2M, client_credentials)로 토큰 발급 후 `ChatOpenAI(base_url=.../serving-endpoints)`. 토큰 만료 대비해 `_model()` 캐시 제거(호출 시 발급). 운영은 짧은 TTL 캐시/401 재발급 고려.

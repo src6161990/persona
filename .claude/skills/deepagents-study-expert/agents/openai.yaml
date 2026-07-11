@@ -1,0 +1,4 @@
+interface:
+  display_name: "DeepAgents Study Expert"
+  short_description: "공식 문서와 persona 코드로 배우는 DeepAgents 전문가"
+  default_prompt: "Use $deepagents-study-expert to teach me the next DeepAgents topic using this persona project."

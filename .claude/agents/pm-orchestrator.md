@@ -37,7 +37,7 @@ description: >-
 - 모델 프로바이더 격리: 비즈니스 로직은 `app/providers`의 `ModelProvider`(경계 `BaseChatModel`)에만 의존.
   모델/프로바이더는 코드 수정 없이 `.env`(PERSONA_MODEL_PROVIDER / PERSONA_MODEL_NAME)만으로 교체. 프로바이더 이름을 로직에 하드코딩하지 말 것.
 - 통화요약·AI비서 원시데이터 적재, 통화 파이프라인 연동은 범위 밖.
-- 기본 모델 `claude-opus-4-8`.
+- 기본 모델 `databricks-claude-opus-4-6`.
 
 ## 작업 방식
 
