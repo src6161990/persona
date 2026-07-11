@@ -230,55 +230,123 @@ MCP(Model Context Protocol) 서버가 공개하는 외부 Tool도 Deep Agent에 
 
 ### 스키마 검증
 
-`save_character()`가 LLM이 생성한 JSON을 바로 저장하지 않고 다음 검증을 수행한다.
+`save_character()`는 문자열 JSON을 받지 않고 `SaveCharacterInput`의 중첩
+`CharacterProfile`을 Tool 입력 스키마로 직접 공개한다.
 
 ```python
-data = json.loads(character_json)
-profile = CharacterProfile.model_validate(data)
+class SaveCharacterInput(BaseModel):
+    profile: CharacterProfile
+
+@tool(args_schema=SaveCharacterInput)
+def save_character(profile: CharacterProfile) -> str:
+    ...
 ```
 
-즉, 모델 출력이 `CharacterProfile` 형식과 맞지 않으면 저장하지 않는다.
+LangChain이 Tool 함수를 실행하기 전에 Pydantic 검증을 수행하므로 모델 출력이
+`CharacterProfile` 형식과 맞지 않으면 저장 함수 본문에 진입하지 않는다.
 
 ### 저장 후 재조회
 
 서비스는 에이전트 실행 후 캐릭터를 저장소에서 다시 읽어 API 응답에 포함한다. LLM의 자연어 답변만 믿지 않고 실제 애플리케이션 상태를 반환한다.
 
-## 8. 더 깊게 살펴볼 개선 후보
+## 8. 학습 실습으로 반영한 개선
 
-### 권장 개선 — 문자열 JSON 대신 구조화된 Tool 인자
+### 반영 완료 — 문자열 JSON 대신 구조화된 Tool 인자
 
-현재 `save_character`는 전체 프로필을 JSON 문자열 하나로 받는다.
+기존에는 전체 프로필을 JSON 문자열 하나로 받았다.
 
 ```python
 def save_character(character_json: str) -> str:
 ```
 
-이 방식은 다음 단계를 추가로 요구한다.
+이 방식은 모델 직렬화 → `json.loads()` → Pydantic 검증이라는 이중 변환이 필요했다.
+현재는 다음 구조화 스키마를 Tool에 직접 노출한다.
 
-1. 모델이 JSON 객체를 문자열로 직렬화한다.
-2. Tool이 `json.loads()`로 다시 파싱한다.
-3. Pydantic이 다시 검증한다.
+```json
+{
+  "profile": {
+    "name": "밝은 비서",
+    "tone": "밝고 정중함",
+    "speaking_style": "짧고 친근하게 말함",
+    "do": ["존댓말 사용"],
+    "dont": ["약속을 확정하지 않기"],
+    "catchphrases": ["확인해볼게요"],
+    "greeting": "안녕하세요! 대신 전화받았습니다.",
+    "summary": "밝고 신뢰감 있는 대리 응대 캐릭터"
+  }
+}
+```
 
-Tool 인자를 구조화된 스키마로 직접 노출하면 이중 직렬화를 줄이고 모델에게 더 명확한 입력 구조를 제공할 수 있다. 실제 변경 전에는 설치된 LangChain 버전의 `args_schema`와 중첩 Pydantic 모델 지원을 확인해야 한다.
+설치된 LangChain에서 중첩 Pydantic 모델이 실제 JSON Schema로 변환되고 Tool 호출 시
+`CharacterProfile` 객체로 복원되는 것도 테스트했다.
 
 ### 운영 전 필수 — 인증·인가
 
 Tool 클로저가 모델의 임의 `user_id` 선택은 막아주지만, FastAPI 경로의 `user_id` 자체가 인증된 사용자와 일치하는지는 검증하지 않는다.
 
-### 권장 개선 — Tool 실패 계약
+### 반영 완료 — Tool 실패 계약
 
-현재 JSON 파싱이나 Pydantic 검증에 실패하면 예외가 발생한다. 에이전트가 오류를 보고 올바른 인자로 재시도할 수 있도록 Tool 오류 처리 방식을 명확히 정의할 여지가 있다.
+세 Tool은 이제 같은 결과 봉투를 반환한다.
 
-### 작은 실습 — Tool 호출 테스트
+```json
+{
+  "status": "success | error",
+  "code": "기계가 판단할 안정적인 코드",
+  "message": "모델이 이해할 설명",
+  "data": "성공 데이터 또는 null"
+}
+```
 
-현재 스모크 테스트는 `invoke_text()` 전체를 가짜 함수로 바꾸므로 다음 내용을 검증하지 않는다.
+대표적인 실패 코드는 다음과 같다.
 
-- LLM이 `get_current_character`를 호출했는가?
-- LLM이 `save_character`를 호출했는가?
-- 잘못된 Tool 인자에서 어떤 일이 일어나는가?
-- 실제 저장 내용이 사용자 요청대로 바뀌었는가?
+- `invalid_arguments`: Pydantic 입력 검증 실패
+- `persona_not_found`: 페르소나 없음
+- `character_not_found`: 캐릭터 없음
+- `persona_lookup_failed` / `character_lookup_failed`: 조회 저장소 실행 실패
+- `character_save_failed`: 저장소 실행 실패
 
-후속 실습으로 Tool 자체의 단위 테스트와 가짜 채팅 모델을 이용한 agent loop 테스트를 분리해볼 수 있다.
+입력 검증 실패는 `handle_validation_error`, 실행 실패는 `ToolException`과
+`handle_tool_error`로 Tool 결과에 돌려준다. 내부 저장소 예외의 상세 메시지는 모델에 노출하지 않는다.
+
+### 반영 완료 — Tool 호출 테스트 분리
+
+- `tests/test_character_tools.py`: Tool 스키마, 사용자 바인딩, 성공, 입력 실패, 실행 실패를 독립 검증한다.
+- `tests/test_character_agent_loop.py`: `GenericFakeChatModel`이 구조화된 `tool_calls`를 반환하게 해
+  실제 Deep Agent의 `AIMessage → ToolMessage → AIMessage` 루프와 저장 결과를 검증한다.
+
+```mermaid
+sequenceDiagram
+    participant Fake as GenericFakeChatModel
+    participant Agent as Deep Agent
+    participant Tool as save_character
+    participant Store as Character Store
+
+    Fake-->>Agent: AIMessage(tool_calls=[save_character])
+    Agent->>Tool: profile 객체로 호출
+    Tool->>Store: 검증된 Character 저장
+    Tool-->>Agent: ToolMessage(status=success)
+    Agent->>Fake: Tool 결과를 포함해 재호출
+    Fake-->>Agent: 최종 AIMessage
+```
+
+스모크 테스트는 API 오케스트레이션, 신규 테스트는 Tool과 agent loop라는 서로 다른 책임을 맡는다.
+
+### 테스트 코드에서 만나는 Python 문법
+
+| 문법 | 테스트 코드 예 | 뜻 |
+|---|---|---|
+| `def test_...():` | `def test_save_character_...():` | pytest가 자동 발견해 실행하는 테스트 함수 |
+| `assert` | `assert result["status"] == "success"` | 조건이 거짓이면 테스트 실패 |
+| `dict` | `{"profile": PROFILE}` | 키로 값을 찾는 자료형; API/JSON 데이터와 모양이 비슷함 |
+| `{**PROFILE}` | `invalid_profile = {**PROFILE}` | 원본 딕셔너리를 복사해 테스트용으로 수정 |
+| `@pytest.fixture` + `yield` | `_clear_store()` | 테스트 전 설정 후, `yield` 뒤에서 정리하는 재사용 코드 |
+| `monkeypatch` | `monkeypatch.setattr(...)` | 테스트 중에만 진짜 함수를 실패하는 가짜 함수로 교체하고 자동 복원 |
+| `class 자식(부모)` | `ToolCallingFakeModel(GenericFakeChatModel)` | 부모 클래스 기능을 물려받아 필요한 부분만 확장 |
+| `iter([...])` | 가짜 모델 `messages` | 순서대로 한 항목씩 반환하는 iterator 생성 |
+| `[x for x in xs if 조건]` | `tool_messages = [...]` | 조건에 맞는 항목만 모으는 list comprehension |
+
+각 테스트 파일에는 해당 문법이 실제 쓰이는 위치에 한국어 주석을 추가했다. 문법을 전부 외우기보다,
+테스트 하나를 실행하고 주석을 따라가며 “준비 → 실행 → 검증” 세 단계로 읽는 것을 권장한다.
 
 ## 9. 핵심 정리
 
