@@ -3,6 +3,8 @@
 에이전트 팩토리/호출 헬퍼를 monkeypatch 로 대체해 라우팅·검증·스토어·예외 매핑만 검증한다.
 """
 
+import base64
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,11 +12,23 @@ from app.agents import persona_agent
 from app.main import app
 from app.schemas.character import CharacterProfile
 from app.schemas.persona import PersonaProfile
+from app.services import character_service
 from app.store.character_store import character_store
 from app.store.conversation_store import conversation_store
+from app.store.image_store import image_store
 from app.store.persona_store import persona_store
 
 client = TestClient(app)
+
+# 1x1 투명 PNG — 테스트에서 이미지 프로바이더 대체용 (Mock 의 픽셀 루프 회피)
+_FAKE_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+class _FakeImageProvider:
+    def generate(self, prompt: str) -> bytes:
+        return _FAKE_PNG
 
 SAMPLE_PROFILE = PersonaProfile(
     speaking_style="정중하고 간결한 말투",
@@ -57,10 +71,13 @@ def _no_llm(monkeypatch):
         "stream_reply",
         lambda system_prompt, history, utterance: iter(["테스트 ", "응답입니다."]),
     )
+    # 이미지 생성: 실제 모델 대신 고정 PNG 를 반환한다.
+    monkeypatch.setattr(character_service, "get_image_provider", lambda: _FakeImageProvider())
 
     persona_store._data.clear()  # type: ignore[attr-defined]
     character_store._data.clear()  # type: ignore[attr-defined]
     conversation_store._data.clear()  # type: ignore[attr-defined]
+    image_store._data.clear()  # type: ignore[attr-defined]
     yield
 
 
@@ -122,14 +139,18 @@ def test_full_flow():
     created = client.post("/personas/u1/character")
     assert created.status_code == 201
     assert created.json()["name"] == SAMPLE_CHARACTER.name
+    # 생성 시 캐릭터 이미지가 함께 만들어져 data URI 로 실려 나온다
+    assert created.json()["image"].startswith("data:image/png;base64,")
 
     got = client.get("/personas/u1/character")
     assert got.status_code == 200
+    assert got.json()["image"].startswith("data:image/png;base64,")
 
     chatted = client.post("/personas/u1/character/chat", json={"message": "인사말을 더 밝게"})
     assert chatted.status_code == 200
     assert "reply" in chatted.json()
     assert chatted.json()["character"]["user_id"] == "u1"
+    assert chatted.json()["character"]["image"].startswith("data:image/png;base64,")
 
     # 대신받기 한 턴 — SSE 스트리밍(text in → text out)
     resp = client.post(

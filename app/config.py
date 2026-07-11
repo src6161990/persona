@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # 모델 최대 출력 토큰 수
     max_tokens: int = Field(default=16000, alias="PERSONA_MAX_TOKENS")
 
+    # 캐릭터 이미지 생성 프로바이더 (기본: mock — 의존성 없이 투명 PNG 플레이스홀더 생성).
+    # 실제 모델 배선 시 .env 로 교체: PERSONA_IMAGE_PROVIDER=databricks + PERSONA_IMAGE_MODEL=<serving-endpoint>
+    image_provider: str = Field(default="mock", alias="PERSONA_IMAGE_PROVIDER")
+    # 이미지 serving endpoint 이름 (image_provider 가 databricks 일 때)
+    image_model: str = Field(default="", alias="PERSONA_IMAGE_MODEL")
+
     # Databricks (PERSONA_MODEL_PROVIDER=databricks 일 때 사용). serving endpoint 는 model_name 으로 지정.
     databricks_workspace_url: str = Field(default="", alias="DATABRICKS_WORKSPACE_URL")
     databricks_client_id: str = Field(default="", alias="DATABRICKS_CLIENT_ID")

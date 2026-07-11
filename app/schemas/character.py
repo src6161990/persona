@@ -31,6 +31,9 @@ class Character(CharacterProfile):
 
     user_id: str
     updated_at: datetime
+    # 투명 배경 캐릭터 PNG 를 data URI(data:image/png;base64,...)로 실어 나른다.
+    # 이미지 바이트는 image_store 에 분리 보관하고, 응답 시점에 병합된다(저장 객체엔 None).
+    image: str | None = Field(default=None, description="투명 배경 캐릭터 이미지 (data URI, 없으면 null)")
 
 
 class CharacterChatRequest(BaseModel):
