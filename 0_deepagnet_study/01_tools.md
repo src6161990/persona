@@ -280,6 +280,9 @@ def save_character(character_json: str) -> str:
 설치된 LangChain에서 중첩 Pydantic 모델이 실제 JSON Schema로 변환되고 Tool 호출 시
 `CharacterProfile` 객체로 복원되는 것도 테스트했다.
 
+이 입력·출력 계약은 `app/schemas/tool.py`에 두고, 실행 함수는 `app/agents/tools.py`에 둔다.
+즉, **데이터 모양은 schemas, 데이터를 읽고 저장하는 행동은 agents**라는 경계를 만든다.
+
 ### 운영 전 필수 — 인증·인가
 
 Tool 클로저가 모델의 임의 `user_id` 선택은 막아주지만, FastAPI 경로의 `user_id` 자체가 인증된 사용자와 일치하는지는 검증하지 않는다.

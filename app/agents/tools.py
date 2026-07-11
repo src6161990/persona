@@ -8,26 +8,12 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, ToolException, tool
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from app.schemas.character import Character, CharacterProfile
+from app.schemas.tool import CharacterToolResult, SaveCharacterInput
 from app.store.character_store import character_store
 from app.store.persona_store import persona_store
-
-
-class CharacterToolResult(BaseModel):
-    """캐릭터 Tool 공통 결과 계약 — 모델이 성공/실패를 안정적으로 구분한다."""
-
-    status: Literal["success", "error"]
-    code: str
-    message: str
-    data: dict[str, Any] | None = None
-
-
-class SaveCharacterInput(BaseModel):
-    """문자열 JSON 대신 Tool 스키마에 직접 노출하는 구조화 입력."""
-
-    profile: CharacterProfile = Field(description="저장할 캐릭터 전체 프로파일")
 
 
 def _result(
