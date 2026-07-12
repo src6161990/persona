@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import Field
 
 from app.agents.tools import make_character_tools
+from app.schemas.tool import CharacterToolCode, ToolResultStatus
 from app.store.character_store import character_store
 from deepagents import create_deep_agent
 
@@ -97,6 +98,6 @@ def test_character_agent_executes_structured_save_tool_and_returns_to_model():
     assert len(tool_messages) == 1
     tool_result = json.loads(tool_messages[0].content)
     assert tool_messages[0].tool_call_id == "save-1"
-    assert tool_result["status"] == "success"
-    assert tool_result["code"] == "character_saved"
+    assert tool_result["status"] == ToolResultStatus.SUCCESS.value
+    assert tool_result["code"] == CharacterToolCode.CHARACTER_SAVED.value
     assert result["messages"][-1].content == "인사말을 밝게 바꾸고 저장했습니다."

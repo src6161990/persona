@@ -32,7 +32,7 @@ flowchart LR
 
 Deep Agent가 직접 DB를 만지는 것은 아니다.
 
-1. LLM이 어떤 Tool을 호출할지 판단한다.
+1. LLM이 어떤 Tool을 호출할지 판단한다. (이 때, Tool factory 패턴으로 이미 tools 는 만들어져있는상황)
 2. Deep Agents/LangChain 런타임이 실제 Python 함수를 실행한다.
 3. 함수 실행 결과가 LLM의 대화 문맥에 다시 들어간다.
 4. LLM은 결과를 보고 다음 Tool을 호출하거나 최종 답변을 생성한다.
@@ -71,6 +71,36 @@ flowchart TD
 ```
 
 따라서 Tool은 단순한 함수가 아니라 **LLM에 공개된 API**로 이해하는 것이 좋다. Tool의 이름, 설명, 입력 스키마는 LLM의 선택에 직접 영향을 준다.
+
+
+character_chat_agent(user_id) 에서는 Tool 자체를 직접 실행하지 않고, make_character_tools(user_id) 라는 Tool 생성 함수를 호출함.
+
+```python
+def character_chat_agent(user_id: str):
+    return create_deep_agent(
+        model=_model(),
+        tools=make_character_tools(user_id),
+        system_prompt=prompts.CHARACTER_CHAT_PROMPT,
+        checkpointer=CHECKPOINTER,
+    )
+```
+
+여기서 일어나는 일을 두 단계로 나누면 아래와 같음.
+
+```mermaid
+ sequenceDiagram
+      participant Server as 서버 코드
+      participant Factory as make_character_tools(user_id)
+      participant Agent as Deep Agent
+      participant LLM as LLM
+
+      Server->>Factory: user_id="u1" 전달
+      Factory-->>Server: u1 전용 Tool 3개 반환
+      Server->>Agent: tools=[get_persona, get_current_character, save_character] 등록
+      LLM->>Agent: 나중에 필요한 Tool 호출 요청
+      Agent->>Agent: 실제 Tool 함수 실행
+```
+
 
 ## 3. Tool의 구성요소
 
@@ -305,8 +335,32 @@ Tool 클로저가 모델의 임의 `user_id` 선택은 막아주지만, FastAPI 
 - `invalid_arguments`: Pydantic 입력 검증 실패
 - `persona_not_found`: 페르소나 없음
 - `character_not_found`: 캐릭터 없음
-- `persona_lookup_failed` / `character_lookup_failed`: 조회 저장소 실행 실패
-- `character_save_failed`: 저장소 실행 실패
+- `storage_unavailable`: 조회·저장 모두에서 저장소에 접근할 수 없음
+- `unexpected_error`: 예상하지 못한 Tool 실행 오류
+
+이 코드들은 단순 문자열 목록이 아니라 `app/schemas/tool.py`의
+`CharacterToolCode(str, Enum)`으로 정의한다. 상태도 `ToolResultStatus` Enum으로 정의한다.
+
+```python
+class ToolResultStatus(str, Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+
+class CharacterToolCode(str, Enum):
+    CHARACTER_SAVED = "character_saved"
+    INVALID_ARGUMENTS = "invalid_arguments"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
+    # ... 다른 결과 코드
+```
+
+`str, Enum`을 함께 상속하면 Enum 멤버를 JSON으로 직렬화할 때 값이 자연스럽게 문자열로 표현된다.
+예를 들어 `CharacterToolCode.CHARACTER_SAVED`는 모델에게 `"character_saved"`로 전달된다.
+Pydantic 모델도 허용되지 않은 코드(예: `"character_svaed"`)를 검증 단계에서 거부한다.
+
+`status`는 `ToolResultStatus`가 담당하고, `CharacterToolCode`는 캐릭터 영역에서
+무슨 일이 일어났는지만 표현한다. 기본 LLM 메시지는
+`CHARACTER_TOOL_DEFAULT_MESSAGES[code]`에서 한 번만 관리한다. 예외의 기술적인 종류가 달라도
+LLM의 다음 행동이 같다면 `storage_unavailable`처럼 하나의 코드로 묶는다.
 
 입력 검증 실패는 `handle_validation_error`, 실행 실패는 `ToolException`과
 `handle_tool_error`로 Tool 결과에 돌려준다. 내부 저장소 예외의 상세 메시지는 모델에 노출하지 않는다.

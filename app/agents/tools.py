@@ -5,45 +5,68 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 from langchain_core.tools import BaseTool, ToolException, tool
 from pydantic import ValidationError
 
 from app.schemas.character import Character, CharacterProfile
-from app.schemas.tool import CharacterToolResult, SaveCharacterInput
+from app.schemas.tool import (
+    CharacterToolCode,
+    CharacterToolResult,
+    SaveCharacterInput,
+    ToolResultStatus,
+    character_tool_message,
+)
 from app.store.character_store import character_store
 from app.store.persona_store import persona_store
 
 
 def _result(
-    status: Literal["success", "error"],
-    code: str,
-    message: str,
+    status: ToolResultStatus,
+    code: CharacterToolCode,
     data: dict[str, Any] | None = None,
+    detail: str | None = None,
 ) -> str:
     return CharacterToolResult(
         status=status,
         code=code,
-        message=message,
+        message=character_tool_message(code, detail),
         data=data,
     ).model_dump_json()
+
+
+def _success_result(code: CharacterToolCode, data: dict[str, Any] | None = None) -> str:
+    """공통 성공 envelope를 만든다."""
+    return _result(ToolResultStatus.SUCCESS, code, data=data)
+
+
+def _error_result(code: CharacterToolCode, detail: str | None = None) -> str:
+    """공통 오류 envelope를 만든다."""
+    return _result(ToolResultStatus.ERROR, code, detail=detail)
+
+
+class CharacterToolError(ToolException):
+    """예외가 발생해도 Tool 결과 코드가 문자열에 의존하지 않도록 하는 전용 예외."""
+
+    def __init__(self, code: CharacterToolCode) -> None:
+        self.code = code
+        super().__init__(code.value)
 
 
 def _validation_error(exc: ValidationError) -> str:
     """잘못된 모델 인자를 재시도 가능한 Tool 결과로 변환한다."""
     fields = sorted({".".join(str(part) for part in error["loc"]) for error in exc.errors()})
-    return _result(
-        "error",
-        "invalid_arguments",
-        f"Tool 입력 스키마가 올바르지 않습니다. 확인할 필드: {', '.join(fields)}",
+    return _error_result(
+        CharacterToolCode.INVALID_ARGUMENTS,
+        f"확인할 필드: {', '.join(fields)}",
     )
 
 
 def _execution_error(exc: ToolException) -> str:
     """내부 예외 상세를 노출하지 않고 안정적인 실패 코드만 모델에 반환한다."""
-    code = str(exc) or "tool_execution_failed"
-    return _result("error", code, "캐릭터 저장 중 오류가 발생했습니다. 저장하지 않았습니다.")
+    code = exc.code if isinstance(exc, CharacterToolError) else CharacterToolCode.UNEXPECTED_ERROR
+    return _error_result(code)
 
 
 def make_character_tools(user_id: str) -> list[BaseTool]:
@@ -55,11 +78,12 @@ def make_character_tools(user_id: str) -> list[BaseTool]:
         try:
             persona = persona_store.get(user_id)
         except Exception as exc:
-            raise ToolException("persona_lookup_failed") from exc
+            raise CharacterToolError(CharacterToolCode.STORAGE_UNAVAILABLE) from exc
         if persona is None:
-            return _result("error", "persona_not_found", "페르소나가 없습니다.")
-        return _result(
-            "success", "persona_found", "페르소나를 조회했습니다.", persona.model_dump()
+            return _error_result(CharacterToolCode.PERSONA_NOT_FOUND)
+        return _success_result(
+            CharacterToolCode.PERSONA_FOUND,
+            persona.model_dump(),
         )
 
     @tool
@@ -68,11 +92,12 @@ def make_character_tools(user_id: str) -> list[BaseTool]:
         try:
             character = character_store.get(user_id)
         except Exception as exc:
-            raise ToolException("character_lookup_failed") from exc
+            raise CharacterToolError(CharacterToolCode.STORAGE_UNAVAILABLE) from exc
         if character is None:
-            return _result("error", "character_not_found", "캐릭터가 없습니다.")
-        return _result(
-            "success", "character_found", "캐릭터를 조회했습니다.", character.model_dump()
+            return _error_result(CharacterToolCode.CHARACTER_NOT_FOUND)
+        return _success_result(
+            CharacterToolCode.CHARACTER_FOUND,
+            character.model_dump(),
         )
 
     @tool(args_schema=SaveCharacterInput)
@@ -86,9 +111,10 @@ def make_character_tools(user_id: str) -> list[BaseTool]:
         try:
             character_store.save(character)
         except Exception as exc:
-            raise ToolException("character_save_failed") from exc
-        return _result(
-            "success", "character_saved", "캐릭터를 저장했습니다.", character.model_dump()
+            raise CharacterToolError(CharacterToolCode.STORAGE_UNAVAILABLE) from exc
+        return _success_result(
+            CharacterToolCode.CHARACTER_SAVED,
+            character.model_dump(),
         )
 
     # Pydantic 입력 오류와 실행 오류를 예외로 graph 밖까지 전파하지 않고 ToolMessage 로 돌려준다.

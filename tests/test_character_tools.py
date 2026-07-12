@@ -10,9 +10,16 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from app.agents.tools import make_character_tools
 from app.schemas.character import Character
+from app.schemas.tool import (
+    CharacterToolCode,
+    CharacterToolResult,
+    ToolResultStatus,
+    character_tool_message,
+)
 from app.store.character_store import character_store
 
 
@@ -73,6 +80,24 @@ def test_save_character_exposes_structured_profile_schema():
     assert "greeting" in schema["$defs"]["CharacterProfile"]["required"]
 
 
+def test_character_tool_result_rejects_unknown_enum_code():
+    """Enum 계약 밖의 오타 코드가 Pydantic 검증에서 차단되는지 확인한다."""
+    with pytest.raises(ValidationError):
+        CharacterToolResult(
+            status=ToolResultStatus.SUCCESS,
+            code="character_svaed",  # 일부러 만든 오타
+            message="저장했습니다.",
+        )
+
+
+def test_character_tool_code_uses_central_default_message():
+    """코드와 기본 LLM 메시지가 한 곳에서 함께 관리되는지 확인한다."""
+    assert character_tool_message(CharacterToolCode.CHARACTER_SAVED) == "캐릭터를 저장했습니다."
+    assert character_tool_message(
+        CharacterToolCode.INVALID_ARGUMENTS, "확인할 필드: profile.greeting"
+    ) == "Tool 입력 형식이 올바르지 않습니다. 확인할 필드: profile.greeting"
+
+
 def test_tools_are_bound_to_factory_user_id():
     """u1용 Tool이 호출돼도 u2 데이터를 읽지 않는지 확인한다."""
     character_store.save(_character("u1", "사용자 1 캐릭터"))
@@ -80,8 +105,8 @@ def test_tools_are_bound_to_factory_user_id():
 
     result = json.loads(_tools("u1")["get_current_character"].invoke({}))
 
-    assert result["status"] == "success"
-    assert result["code"] == "character_found"
+    assert result["status"] == ToolResultStatus.SUCCESS.value
+    assert result["code"] == CharacterToolCode.CHARACTER_FOUND.value
     assert result["data"]["user_id"] == "u1"
     assert result["data"]["name"] == "사용자 1 캐릭터"
 
@@ -90,8 +115,8 @@ def test_save_character_returns_success_contract_and_persists():
     """성공 결과 계약과 실제 저장 상태를 둘 다 확인한다."""
     result = json.loads(_tools("u1")["save_character"].invoke({"profile": PROFILE}))
 
-    assert result["status"] == "success"
-    assert result["code"] == "character_saved"
+    assert result["status"] == ToolResultStatus.SUCCESS.value
+    assert result["code"] == CharacterToolCode.CHARACTER_SAVED.value
     assert result["data"]["user_id"] == "u1"
     assert character_store.get("u1").greeting == PROFILE["greeting"]
 
@@ -106,8 +131,8 @@ def test_save_character_returns_validation_failure_contract_without_persisting()
         _tools("u1")["save_character"].invoke({"profile": invalid_profile})
     )
 
-    assert result["status"] == "error"
-    assert result["code"] == "invalid_arguments"
+    assert result["status"] == ToolResultStatus.ERROR.value
+    assert result["code"] == CharacterToolCode.INVALID_ARGUMENTS.value
     assert "profile.greeting" in result["message"]
     assert character_store.get("u1") is None
 
@@ -124,8 +149,8 @@ def test_save_character_returns_execution_failure_without_internal_details(monke
 
     result = json.loads(_tools("u1")["save_character"].invoke({"profile": PROFILE}))
 
-    assert result["status"] == "error"
-    assert result["code"] == "character_save_failed"
+    assert result["status"] == ToolResultStatus.ERROR.value
+    assert result["code"] == CharacterToolCode.STORAGE_UNAVAILABLE.value
     assert "password" not in result["message"]
 
 
@@ -138,6 +163,6 @@ def test_get_current_character_returns_execution_failure_contract(monkeypatch):
 
     result = json.loads(_tools("u1")["get_current_character"].invoke({}))
 
-    assert result["status"] == "error"
-    assert result["code"] == "character_lookup_failed"
+    assert result["status"] == ToolResultStatus.ERROR.value
+    assert result["code"] == CharacterToolCode.STORAGE_UNAVAILABLE.value
     assert "password" not in result["message"]
