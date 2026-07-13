@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Agents 상태 저장 지도 — persona POC</title>
+    <style>
+      :root {
+        --ink: #172033;
+        --muted: #596579;
+        --line: #d9e0ea;
+        --paper: #f5f7fb;
+        --current: #e8f5ee;
+        --current-border: #4aa270;
+        --future: #f0ebff;
+        --future-border: #8367cb;
+        --app: #fff2d9;
+        --app-border: #d7932d;
+        --trigger: #e9f3ff;
+        --trigger-border: #3474ba;
+        --danger: #fff0f1;
+        --danger-border: #c85462;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--paper); color: var(--ink); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      main { max-width: 1240px; margin: 0 auto; padding: 40px 24px 64px; }
+      h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); letter-spacing: -0.04em; }
+      h2 { margin: 0 0 14px; font-size: 21px; letter-spacing: -0.025em; }
+      h3 { margin: 0 0 8px; font-size: 16px; }
+      p { line-height: 1.6; }
+      .intro { max-width: 850px; color: var(--muted); margin: 13px 0 26px; }
+      .notice { border-left: 4px solid var(--current-border); background: #fff; padding: 14px 16px; border-radius: 8px; line-height: 1.6; }
+      .legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin: 20px 0; font-size: 14px; color: var(--muted); }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+      .map { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: 0 8px 26px rgba(30, 54, 86, .06); overflow-x: auto; }
+      .map-inner { min-width: 1000px; position: relative; padding: 8px 0; }
+      .stage { display: grid; grid-template-columns: 185px 60px 230px 60px 230px 60px 230px; align-items: center; }
+      .arrow { position: relative; height: 2px; background: #93a3b8; }
+      .arrow::after { content: ""; position: absolute; right: -1px; top: -5px; border-left: 9px solid #93a3b8; border-top: 6px solid transparent; border-bottom: 6px solid transparent; }
+      .arrow small { position: absolute; width: 105px; top: -25px; left: -22px; text-align: center; color: var(--muted); font-size: 11px; }
+      .node { position: relative; padding: 17px; border: 2px solid; border-radius: 14px; min-height: 118px; background: #fff; }
+      .node strong { display: block; font-size: 16px; margin-bottom: 7px; }
+      .node code { display: inline-block; padding: 2px 5px; background: rgba(255,255,255,.7); border-radius: 4px; font-size: 12px; }
+      .node .sub { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .trigger { border-color: var(--trigger-border); background: var(--trigger); }
+      .app { border-color: var(--app-border); background: var(--app); }
+      .current { border-color: var(--current-border); background: var(--current); }
+      .future { border-color: var(--future-border); background: var(--future); }
+      .branch { margin: 25px 0 0 524px; width: 290px; border-top: 2px dashed var(--future-border); border-left: 2px dashed var(--future-border); padding: 22px 0 0 24px; position: relative; }
+      .branch::before { content: "선택해서 연결할 때"; position: absolute; top: -23px; left: 12px; color: #7256b3; font-size: 12px; background: #fff; padding: 0 5px; }
+      .branch .node { min-height: 120px; }
+      .callout { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
+      .callout > div { padding: 14px; border-radius: 10px; background: #f7f9fc; font-size: 13px; line-height: 1.55; }
+      .callout b { display: block; margin-bottom: 3px; }
+      .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+      .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 19px; }
+      .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+      .now { background: #dff3e8; color: #15643a; }.not-now { background: #eee8ff; color: #5940a0; }.no-ui { background: #ffe5e8; color: #9b2639; }
+      ul { padding-left: 19px; margin: 9px 0 0; color: #39475c; line-height: 1.65; font-size: 14px; }
+      .scope { margin-top: 24px; background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; vertical-align: top; padding: 13px 15px; border-bottom: 1px solid var(--line); line-height: 1.5; }
+      th { background: #f2f5f9; font-size: 13px; } tr:last-child td { border-bottom: 0; }
+      .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1c4c84; }
+      .inspect { margin-top: 24px; background: #172033; color: #f4f7fc; border-radius: 15px; padding: 20px; }
+      .inspect p { color: #c6d0df; margin: 0 0 11px; }
+      pre { margin: 0; white-space: pre-wrap; color: #c8f2db; font-size: 13px; line-height: 1.55; }
+      details { margin-top: 14px; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; }
+      summary { cursor: pointer; font-weight: 650; } details p { color: var(--muted); margin: 10px 0 3px; }
+      @media (max-width: 760px) { main { padding: 26px 15px 45px; } .map { padding: 15px; } .cards, .callout { grid-template-columns: 1fr; } th, td { padding: 10px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>상태 저장 지도</h1>
+      <p class="intro">persona POC에서 <b>누가</b> 데이터를 만들고, <b>언제</b> 저장이 트리거되며, <b>어떤 범위</b>로 다시 읽히는지 연결한 지도입니다. 초록은 현재 실제로 연결된 구성, 보라는 현재는 연결되지 않은 <code>StoreBackend</code> 비교 대상입니다.</p>
+      <div class="notice"><b>가장 중요한 한 줄</b> — <code>Checkpointer</code>는 Agent 실행 상태의 <em>스냅샷을 저장하는 사람</em>이고, <code>StateBackend</code>는 그 상태 안에서 Agent 파일을 <em>다루는 방식</em>입니다. <code>StoreBackend</code>는 별도의 LangGraph Store에 파일을 저장하는 방식입니다.</div>
+
+      <div class="legend">
+        <span><i class="dot" style="background:#3474ba"></i>요청/트리거</span><span><i class="dot" style="background:#4aa270"></i>현재 POC에서 사용 중</span><span><i class="dot" style="background:#d7932d"></i>서비스 도메인 데이터</span><span><i class="dot" style="background:#8367cb"></i>현재 미연결 비교 대상</span>
+      </div>
+
+      <section class="map">
+        <h2>1. 캐릭터 편집 요청 한 번의 흐름</h2>
+        <div class="map-inner">
+          <div class="stage">
+            <div class="node trigger"><strong>① 사용자</strong><code>POST /personas/{user_id}/character/chat</code><div class="sub">메시지와 URL의 user_id를 보냄</div></div>
+            <div class="arrow"><small>요청</small></div>
+            <div class="node app"><strong>② 서비스</strong><code>character_service.chat()</code><div class="sub">서버가 thread_id를 결정<br><code>character-chat:{user_id}</code></div></div>
+            <div class="arrow"><small>invoke</small></div>
+            <div class="node current"><strong>③ Deep Agent</strong><code>create_deep_agent(...)</code><div class="sub">LLM·Tool loop 실행<br>기본 backend = StateBackend</div></div>
+            <div class="arrow"><small>턴 완료마다</small></div>
+            <div class="node current"><strong>④ Checkpointer</strong><code>InMemorySaver</code><div class="sub">Agent state 스냅샷을<br><b>thread_id</b> 키로 저장</div></div>
+          </div>
+          <div class="branch">
+            <div class="node future"><strong>StoreBackend + BaseStore</strong><div class="sub">현재는 미연결. Agent 파일을 thread 밖에서도 꺼내야 할 때 별도로 연결한다. Checkpointer를 대체하지 않는다.</div></div>
+          </div>
+        </div>
+        <div class="callout">
+          <div><b>저장 트리거</b>Agent가 그래프 단계를 진행하고 상태가 갱신될 때 Checkpointer가 checkpoint를 만든다. 캐릭터 편집 API를 다시 호출하면 같은 thread_id의 최신 상태가 이어진다.</div>
+          <div><b>StateBackend 파일</b>Agent가 <code>write_file()</code> 같은 기본 파일 Tool을 쓸 때 생성된다. 그 파일은 Agent state에 있으므로 checkpoint 스냅샷에 함께 포함될 <em>수 있다</em>.</div>
+          <div><b>현재 핵심 변경</b><code>save_character()</code>는 backend 파일이 아니라 <code>character_store</code>를 직접 변경한다. 따라서 캐릭터 데이터는 Agent state와 별개다.</div>
+        </div>
+      </section>
+
+      <h2 style="margin-top:30px">2. “저장소”별 경계와 열쇠(key)</h2>
+      <section class="scope">
+        <table>
+          <thead><tr><th>개념 / 현재 여부</th><th>저장하는 것</th><th>누가·언제 쓰나</th><th>범위와 다시 읽는 열쇠</th></tr></thead>
+          <tbody>
+            <tr><td><b>Checkpointer</b><br><span class="badge now">현재 사용</span></td><td>messages, tool 호출 진행, Agent state 스냅샷. StateBackend 파일도 state의 일부라면 같이 포함.</td><td>LangGraph runtime이 Agent 실행 단계마다 저장. 앱은 <code>checkpointer=CHECKPOINTER</code>만 주입.</td><td><span class="key">thread_id</span> = <code>character-chat:{user_id}</code><br>같은 사용자의 캐릭터 편집 대화는 이어짐. 프로세스 재시작 시 <code>InMemorySaver</code> 내용은 사라짐.</td></tr>
+            <tr><td><b>StateBackend</b><br><span class="badge now">기본값으로 사용</span></td><td>Agent가 보는 임시 가상 파일: <code>/draft.txt</code>, 내부 대용량 tool 결과 등.</td><td>LLM이 Deep Agents 기본 file Tool을 호출할 때만 사용. 현재 커스텀 Tool 중심이라 파일을 적극 사용하지 않음.</td><td>현재 Agent state / thread에 종속. 독립된 DB나 독립 조회 API가 아님. Checkpointer가 있어야 다음 요청에도 state를 복원할 수 있음.</td></tr>
+            <tr><td><b>StoreBackend</b><br><span class="badge not-now">현재 미사용</span></td><td>LangGraph <code>BaseStore</code> 안의 Agent 파일. 체크포인트와 별개의 저장 경로.</td><td>Agent file Tool이 읽기/쓰기할 때. <code>create_deep_agent(backend=..., store=...)</code>로 명시 연결해야 함.</td><td><span class="key">namespace</span>로 user / tenant / assistant / thread 범위를 설계. 현재는 store가 없어 조회할 데이터도 없음.</td></tr>
+            <tr><td><b>app/store</b><br><span class="badge now">현재 사용</span></td><td>정식 도메인 데이터: Persona, Character, Image, 통화 대화 이력.</td><td>서비스 코드·Custom Tool이 저장. 예: <code>save_character()</code> → <code>character_store.save()</code>.</td><td><span class="key">user_id</span> 또는 <span class="key">call_id</span>. Agent backend와 자동 연결되지 않음. 현재는 모두 인메모리라 재시작 시 사라짐.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <h2 style="margin-top:30px">3. multi-tenancy는 어디에 들어가는가?</h2>
+      <section class="cards">
+        <article class="card"><h3>현재 POC: user_id가 두 역할</h3><p>URL의 <code>user_id</code>가 캐릭터/페르소나 조회 키이고, 서비스가 <code>thread_id = character-chat:{user_id}</code>를 만듭니다. 즉 같은 user_id의 편집 대화 상태가 이어집니다.</p><p><b>중요:</b> 이는 “scope를 정한 것”이지, 인증·권한 검증 자체는 아닙니다.</p></article>
+        <article class="card"><h3>멀티 테넌시가 필요해지는 순간</h3><p>예를 들어 회사(tenant) A와 B가 같은 <code>user_id</code> 값을 가질 수 있거나, 한 사용자가 여러 workspace를 가질 때입니다.</p><p>그때는 <code>(tenant_id, user_id, thread_id)</code>처럼 각 저장소의 키/namespace를 분명히 설계합니다.</p></article>
+        <article class="card"><h3>StoreBackend에서는</h3><p><code>namespace=lambda rt: (tenant_id, user_id)</code>처럼 namespace factory가 파일의 격리 범위를 만듭니다.</p><p>하지만 현재 POC는 StoreBackend를 연결하지 않았으므로, 이 규칙도 아직 실행 중이지 않습니다.</p></article>
+      </section>
+
+      <h2 style="margin-top:30px">4. 내가 지금 조회할 수 있는 인터페이스는?</h2>
+      <section class="cards">
+        <article class="card"><span class="badge now">HTTP API 있음</span><h3>정식 도메인 데이터</h3><ul><li><code>GET /personas/{user_id}</code> — Persona</li><li><code>GET /personas/{user_id}/character</code> — Character</li><li>통화 이력은 현재 사용자 조회 API가 없음</li></ul></article>
+        <article class="card"><span class="badge no-ui">UI / HTTP API 없음</span><h3>Checkpointer 상태</h3><ul><li>현재 <code>InMemorySaver</code> 객체는 프로세스 메모리에만 있음</li><li>LangGraph API의 <code>get_tuple(config)</code>, <code>list(config)</code>로 개발 중 조회 가능</li><li>운영자용 조회 화면은 아직 만들지 않음</li></ul></article>
+        <article class="card"><span class="badge no-ui">현재 데이터 자체가 없음</span><h3>State / Store backend 파일</h3><ul><li>StateBackend: standalone 조회소가 아니라 Agent state 일부</li><li>StoreBackend: 현재 미연결</li><li>연결 후에는 Agent의 <code>ls</code> file Tool 또는 BaseStore API로 조회 가능</li></ul></article>
+      </section>
+
+      <section class="inspect">
+        <h2>개발 중 checkpoint를 직접 들여다보는 최소 예시</h2>
+        <p>이것은 학습/디버그용 Python 코드입니다. HTTP API로 노출하면 대화 내용이 유출될 수 있으므로 현재는 만들지 않습니다.</p>
+        <pre>from app.agents.factory import CHECKPOINTER
+
+config = {"configurable": {"thread_id": "character-chat:u1"}}
+checkpoint = CHECKPOINTER.get_tuple(config)
+
+if checkpoint is not None:
+    print(checkpoint.checkpoint)  # 그 thread의 최신 Agent state 스냅샷</pre>
+      </section>
+
+      <details><summary>“StateBackend가 checkpoint에 저장된다”를 정확히 말하면?</summary><p><b>아니요.</b> StateBackend 자체가 checkpoint를 저장하는 것은 아닙니다. StateBackend가 Agent state 안에 파일 데이터를 두고, Checkpointer가 그 Agent state를 스냅샷으로 저장합니다. 반대로 StoreBackend 데이터는 별도 BaseStore에 있으므로 checkpoint 스냅샷의 주인이 아닙니다.</p></details>
+      <details><summary>현재 앱을 재시작하면 무엇이 남나?</summary><p>현재 <code>CHECKPOINTER</code>도 <code>app/store</code> 구현도 인메모리입니다. 따라서 Persona, Character, 통화 이력, 캐릭터 편집 상태 모두 프로세스 재시작 시 사라집니다. 이는 POC 학습 단계에서 의도적으로 단순화한 구성입니다.</p></details>
+      <details><summary>이 지도에서 다음으로 실습해볼 가장 작은 실험은?</summary><p>캐릭터 편집 Agent가 임시 메모를 <code>write_file('/draft.txt', ...)</code>에 쓰고 다음 턴에 읽도록 프롬프트와 가짜 모델 테스트를 추가해 보세요. 그러면 StateBackend → Checkpointer → 같은 thread_id 복원 연결을 실제로 관찰할 수 있습니다. 정식 Character 변경은 계속 <code>save_character()</code>에만 맡깁니다.</p></details>
+    </main>
+  </body>
+</html>

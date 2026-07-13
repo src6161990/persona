@@ -1,4 +1,7 @@
-"""DeepAgent 팩토리 + 모델/체크포인터 구성 + 호출 헬퍼."""
+"""에이전트 호출·스트리밍·출력 파싱 헬퍼.
+
+factory 가 만든 에이전트(또는 채팅 모델)를 '실행'하는 책임만 진다.
+"""
 
 from __future__ import annotations
 
@@ -6,58 +9,11 @@ import json
 from collections.abc import Iterator
 from typing import Any, TypeVar
 
-from deepagents import create_deep_agent
-from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
 
-from app.agents import prompts
-from app.agents.tools import make_character_tools
-from app.providers.model_provider import get_model_provider
-from app.schemas.character import CharacterProfile
-from app.schemas.persona import PersonaProfile
-
-# 멀티턴 대화 상태 저장용 체크포인터 (버전별 import 경로 차이 방어)
-try:  # langgraph 최신
-    from langgraph.checkpoint.memory import InMemorySaver as _Saver
-except ImportError:  # 구버전 별칭
-    from langgraph.checkpoint.memory import MemorySaver as _Saver  # type: ignore
-
-CHECKPOINTER = _Saver()
+from app.agents.factory import build_model
 
 T = TypeVar("T", bound=BaseModel)
-
-
-def _model() -> BaseChatModel:
-    # 구체 프로바이더는 provider 계층에서 결정 (여기선 벤더에 의존하지 않음).
-    # 매 호출 시 생성 — Databricks 등 만료형 토큰을 재발급하기 위함(모델 생성 자체는 저렴).
-    return get_model_provider().get_chat_model()
-
-
-# --- 에이전트 팩토리 ---
-
-def build_persona_agent():
-    return create_deep_agent(
-        model=_model(),
-        system_prompt=prompts.PERSONA_BUILDER_PROMPT,
-        response_format=PersonaProfile,
-    )
-
-
-def create_character_agent():
-    return create_deep_agent(
-        model=_model(),
-        system_prompt=prompts.CHARACTER_CREATE_PROMPT,
-        response_format=CharacterProfile,
-    )
-
-
-def character_chat_agent(user_id: str):
-    return create_deep_agent(
-        model=_model(),
-        tools=make_character_tools(user_id),
-        system_prompt=prompts.CHARACTER_CHAT_PROMPT,
-        checkpointer=CHECKPOINTER,
-    )
 
 
 # --- 대신받기(실시간 턴) 스트리밍 ---
@@ -81,28 +37,13 @@ def stream_reply(
     if utterance:
         messages.append(HumanMessage(content=utterance))
 
-    for chunk in _model().stream(messages):
+    for chunk in build_model().stream(messages):
         text = _message_text(chunk.content)
         if text:
             yield text
 
 
 # --- 호출 헬퍼 ---
-
-def _message_text(content: Any) -> str:
-    """AIMessage.content(문자열 또는 블록 리스트)를 순수 텍스트로 정규화한다."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-        return "".join(parts)
-    return str(content)
-
 
 def invoke_text(agent, prompt: str, config: dict | None = None) -> str:
     """에이전트를 호출하고 마지막 메시지 텍스트를 반환한다."""
@@ -130,6 +71,23 @@ def invoke_structured(agent, prompt: str, model_cls: type[T], config: dict | Non
     # 폴백: 마지막 메시지 텍스트에서 JSON 추출
     text = _message_text(result.get("messages", [])[-1].content) if result.get("messages") else ""
     return model_cls.model_validate(_extract_json(text))
+
+
+# --- 내부 파싱 유틸 ---
+
+def _message_text(content: Any) -> str:
+    """AIMessage.content(문자열 또는 블록 리스트)를 순수 텍스트로 정규화한다."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+        return "".join(parts)
+    return str(content)
 
 
 def _extract_json(text: str) -> dict:

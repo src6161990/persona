@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
-from app.agents import persona_agent, prompts
+from app.agents import factory, prompts, runner
 from app.errors import EmptyBuildInput, PersonaNotFound
 from app.schemas.character import Character
 from app.schemas.persona import (
@@ -26,8 +26,8 @@ def build_persona(user_id: str, request: PersonaBuildRequest) -> Persona:
         f"{request.model_dump_json(indent=2)}\n\n"
         "이 데이터를 분석해 사용자의 페르소나를 구조화 출력으로 생성하라."
     )
-    agent = persona_agent.build_persona_agent()
-    profile: PersonaProfile = persona_agent.invoke_structured(agent, prompt, PersonaProfile)
+    agent = factory.build_persona_agent()
+    profile: PersonaProfile = runner.invoke_structured(agent, prompt, PersonaProfile)
 
     persona = Persona(
         user_id=user_id,
@@ -67,7 +67,7 @@ def answer_turn(user_id: str, request: AnswerTurnRequest) -> Iterator[tuple[str,
 
     def _events() -> Iterator[tuple[str, dict]]:
         parts: list[str] = []
-        for delta in persona_agent.stream_reply(system_prompt, history, request.utterance):
+        for delta in runner.stream_reply(system_prompt, history, request.utterance):
             parts.append(delta)
             yield "token", {"delta": delta}
         reply = "".join(parts)

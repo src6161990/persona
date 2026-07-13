@@ -9,7 +9,7 @@ Read this file at the start of every study request. The URLs are navigation poin
 | 1 | Execution environment | Tools | https://docs.langchain.com/oss/python/deepagents/tools | `app/agents/tools.py`, `character_chat_agent()` |
 | 2 | Execution environment | Backends | https://docs.langchain.com/oss/python/deepagents/backends | Compare Deep Agents virtual filesystem backends with `app/store/`; do not conflate them |
 | 3 | Execution environment | Permissions | https://docs.langchain.com/oss/python/deepagents/permissions | `.env` protection, future filesystem tools, least privilege |
-| 4 | Execution environment | Multimodality | https://docs.langchain.com/oss/python/deepagents/multimodality | Possible audio/image inputs versus the current text-only STT boundary |
+| 4 | Execution environment | Multimodality | https://docs.langchain.com/oss/python/deepagents/multimodal | Possible audio/image inputs versus the current text-only STT boundary |
 | 5 | Execution environment | Sandboxes | https://docs.langchain.com/oss/python/deepagents/sandboxes | No current code execution; evaluate only for analysis workflows |
 | 6 | Execution environment | Interpreters | https://docs.langchain.com/oss/python/deepagents/interpreters | Deterministic transcript aggregation without shell access |
 | 7 | Execution environment | Dynamic subagents | https://docs.langchain.com/oss/python/deepagents/dynamic-subagents | Possible on-demand specialist for relationship or speaking-style analysis |

@@ -8,7 +8,7 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agents import persona_agent
+from app.agents import factory, runner
 from app.main import app
 from app.schemas.character import CharacterProfile
 from app.schemas.persona import PersonaProfile
@@ -54,20 +54,20 @@ SAMPLE_CHARACTER = CharacterProfile(
 @pytest.fixture(autouse=True)
 def _no_llm(monkeypatch):
     """에이전트를 가짜로 대체하고 스토어를 초기화한다."""
-    monkeypatch.setattr(persona_agent, "build_persona_agent", lambda: object())
-    monkeypatch.setattr(persona_agent, "create_character_agent", lambda: object())
-    monkeypatch.setattr(persona_agent, "character_chat_agent", lambda user_id: object())
+    monkeypatch.setattr(factory, "build_persona_agent", lambda: object())
+    monkeypatch.setattr(factory, "build_character_agent", lambda: object())
+    monkeypatch.setattr(factory, "build_character_chat_agent", lambda user_id: object())
 
     def fake_structured(agent, prompt, model_cls, config=None):
         return SAMPLE_PROFILE if model_cls is PersonaProfile else SAMPLE_CHARACTER
 
-    monkeypatch.setattr(persona_agent, "invoke_structured", fake_structured)
+    monkeypatch.setattr(runner, "invoke_structured", fake_structured)
     monkeypatch.setattr(
-        persona_agent, "invoke_text", lambda agent, prompt, config=None: "테스트 응답입니다."
+        runner, "invoke_text", lambda agent, prompt, config=None: "테스트 응답입니다."
     )
     # 대신받기 스트리밍: LLM 대신 고정 토큰을 흘려보낸다.
     monkeypatch.setattr(
-        persona_agent,
+        runner,
         "stream_reply",
         lambda system_prompt, history, utterance: iter(["테스트 ", "응답입니다."]),
     )
