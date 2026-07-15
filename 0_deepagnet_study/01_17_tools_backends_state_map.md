@@ -1,6 +1,6 @@
-# 01–07 통합 지도 — Tool, Backend, 상태의 연결
+# 01–11 통합 지도 — Tool, 실행, 상태, 문맥의 연결
 
-> 범위: Tools(01), Backends(02), Permissions~Dynamic subagents(03–07)의 핵심 연결.  
+> 범위: Tools(01)부터 Memory(11)까지의 핵심 연결.
 > 표기: **현재 사용**은 이 persona POC 코드에 연결된 것, **선택지**는 학습한 개념이지만 아직 연결하지 않은 것이다.
 
 ## 1. 한 장으로 보는 전체 관계
@@ -37,6 +37,19 @@ flowchart TB
   FileSystem --> LocalDisk[Local disk]
   Store --> BaseStore[LangGraph BaseStore]
   Sandbox --> Isolated[Isolated environment]
+
+  Agent --> AgentStream[Agent stream and event stream]
+  AgentStream --> AgentEvents[Messages tools subagents states]
+
+  Service --> ModelStream[Model direct stream]
+  ModelStream --> SSE[token and done SSE]
+
+  Agent --> Skills[Skills]
+  Skills --> Procedure[Procedural instructions]
+  Agent --> Memory[Memory paths]
+  Memory --> MemoryFile[Memory files]
+  MemoryFile --> Store
+  Checkpointer --> Episodic[Episodic thread history]
 ```
 
 ### 화살표를 문장으로 읽기
@@ -45,6 +58,8 @@ flowchart TB
 2. Built-in 파일 Tool만 Backend에 연결된다. 예: `read_file`과 `write_file`은 선택한 backend를 통해 파일을 다룬다.
 3. `thread_id`는 같은 대화/작업 단위를 식별한다. `StateBackend`의 파일 범위와 Checkpointer의 조회 키에 연결된다.
 4. Checkpointer는 Agent state의 snapshot을 저장한다. `StateBackend` 파일이 Agent state 안에 있다면 그 snapshot에 포함될 수 있다.
+5. **두 종류의 stream**이 있다. 현재 대신받기는 모델 직접 stream을 `token`/`done` SSE로 바꾸고, Deep Agent stream/Event stream은 Tool·subagent를 포함한 Agent 실행 과정을 관찰한다.
+6. **Skill은 작업 방법**, **Memory는 기억할 파일**, **StoreBackend는 Agent 파일을 thread 간 보관할 장소**다.
 
 ## 2. Tool의 세 종류와 실행 대상
 
@@ -207,6 +222,30 @@ flowchart TB
   Interpreter --> Dynamic[Dynamic subagents]
   Dynamic --> Task[task loop and parallel]
   Task --> Subagents[Configured subagents]
+
+  Agent[Deep Agent] --> AgentStream[agent stream]
+  Agent --> EventStream[agent stream events]
+  AgentStream --> Chunk[One stream chunks]
+  EventStream --> Projections[Messages tools subagents values]
+  Projections --> UI[Agent progress UI]
+
+  Direct[Chat model direct stream] --> Text[Text chunks]
+  Text --> SSE[token and done SSE]
+  CallId[call id] --> CallHistory[conversation store]
+  CallHistory --> Direct
+
+  Agent --> Skills[Skills]
+  Skills --> SkillMeta[Name description]
+  SkillMeta --> SkillGuide[SKILL md when relevant]
+  SkillGuide --> Procedure[Procedural instructions]
+  Procedure --> SelectedTools
+
+  Agent --> Memory[Memory paths]
+  Memory --> MemoryFile[memories preferences md]
+  MemoryFile --> Store[StoreBackend]
+  Store --> Namespace[User or agent namespace]
+  Thread --> Checkpointer
+  Checkpointer --> Episodic[Episodic thread history]
 ```
 
 ### 이 그림을 위에서 아래로 읽기
@@ -217,6 +256,9 @@ flowchart TB
 4. **StateBackend와 thread_id**: `thread_id`는 StateBackend 파일과 Checkpointer state를 어느 대화 단위로 분리·조회할지 정한다.
 5. **Interpreter 체인**: `CodeInterpreterMiddleware`가 Interpreter를 Agent에 넣는다. `mode="thread"`에서는 Interpreter 변수가 같은 thread 범위에 남을 수 있다. Checkpointer를 추가하면 그 Interpreter snapshot도 Agent state history에 포함될 수 있다.
 6. **PTC와 Dynamic subagents**: PTC는 allowlist에 든 Tool을 Interpreter 코드가 반복·분기·병렬 호출하게 한다. Dynamic subagents는 그 Interpreter가 `task()`로 설정된 subagent를 반복·병렬 호출하는 기능이다.
+7. **08·09 Streaming**: `agent.stream()`과 `agent.stream_events()`는 Deep Agent 실행을 내보낸다. 전자는 하나의 iterator chunk를 앱이 `stream_mode`별로 분기하고, 후자는 messages·Tool·subagents 같은 typed projection을 나누어 소비한다. 현재 대신받기는 둘이 아니라 `build_model().stream()`의 text chunk를 SSE `token`/`done`으로 바꾼다. `call_id`는 이 스트림의 이전 통화 이력을 `conversation_store`에서 찾는 key다.
+8. **10 Skills**: Skill은 Tool을 실행하는 권한이 아니라 “어떤 순서와 규칙으로 Tool을 쓸지”라는 절차적 지식이다. Agent는 name·description을 먼저 보고, 필요할 때 `SKILL.md`를 읽는다.
+9. **11 Memory**: `memory=[...]`는 기억으로 읽고 갱신할 파일을 지정한다. `StoreBackend`는 그 파일을 thread 간 보관할 수 있는 Backend다. Checkpointer의 episodic thread history와 장기 Memory 파일은 같은 것이 아니다.
 
 ### 키워드 누락 검사
 
@@ -232,13 +274,23 @@ flowchart TB
 | PTC | Interpreter → Tool allowlist → 선택된 Tool | 미사용 |
 | Dynamic subagents | Interpreter → `task()` → configured subagents | 미사용 |
 | `CodeInterpreterMiddleware` | Interpreter를 Agent에 추가하는 middleware | 미사용 |
+| `agent.stream()` | 하나의 iterator에서 Agent chunk를 받아 앱이 분기 | 미사용 |
+| `agent.stream_events()` | messages·Tool·subagents 등의 typed projection | 미사용 |
+| 모델 직접 stream | `build_model().stream()` → `token`/`done` SSE | 대신받기에 사용 |
+| SSE `token`, `done` | text chunk 전달, 완료·통화 이력 저장 완료 알림 | 대신받기에 사용 |
+| `call_id` | `conversation_store`에서 같은 통화 이력 조회 | 대신받기에 사용 |
+| Skills | 작업 방법·규칙을 단계적으로 읽는 절차적 지식 | 서비스 Agent에는 미설정 |
+| Memory | `memory=[...]`로 지정한 장기 기억 파일 | 미설정 |
+| StoreBackend와 Memory | Memory 파일을 thread 간 보관하는 조합 | 둘 다 미설정 |
 
 > 주의: PTC와 Dynamic subagents는 Interpreter runtime의 Beta 기능이다. PTC/`task()` 호출은 일반 Tool 호출 경로와 달라, 일반 Tool별 승인 규칙이 자동으로 각각 적용된다고 가정하면 안 된다.
 
-## 기억할 세 문장
+## 기억할 다섯 문장
 
 1. **Tool은 LLM이 호출하는 기능**, Backend는 Built-in 파일 Tool이 작업할 **장소**다.
 2. **Closure는 Custom Tool이 누구의 데이터를 다룰지 서버가 고정하는 방법**이다.
 3. **thread_id는 대화 식별자, Checkpointer는 그 대화의 Agent state snapshot 저장소**다. `app/store/`의 Persona/Character와는 다른 저장 경로다.
+4. **모델 직접 stream은 빠른 텍스트 전달**, Agent stream/Event stream은 Tool·subagent를 포함한 **Agent 실행 관찰**이다.
+5. **Skill은 작업 방법, Memory는 기억할 파일, StoreBackend는 그 파일을 둘 장소**다.
 
-> 공식 참고: [Tools](https://docs.langchain.com/oss/python/deepagents/tools), [Backends](https://docs.langchain.com/oss/python/deepagents/backends), [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)
+> 공식 참고: [Tools](https://docs.langchain.com/oss/python/deepagents/tools), [Backends](https://docs.langchain.com/oss/python/deepagents/backends), [Event streaming](https://docs.langchain.com/oss/python/deepagents/event-streaming), [Streaming](https://docs.langchain.com/oss/python/deepagents/streaming), [Skills](https://docs.langchain.com/oss/python/deepagents/skills), [Memory](https://docs.langchain.com/oss/python/deepagents/memory)
