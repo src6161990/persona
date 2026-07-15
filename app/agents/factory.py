@@ -10,6 +10,7 @@ from deepagents import create_deep_agent
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.agents import prompts
+from app.agents.harness_profiles import register_persona_harness_profile
 from app.agents.tools import make_character_tools
 from app.providers.model_provider import get_model_provider
 from app.schemas.character import CharacterProfile
@@ -30,6 +31,9 @@ def build_model() -> BaseChatModel:
     구체 프로바이더는 provider 계층에서 결정한다 (여기선 벤더에 의존하지 않음).
     매 호출 시 생성 — Databricks 등 만료형 토큰을 재발급하기 위함(모델 생성 자체는 저렴).
     """
+    # Deep Agents Profile은 create_deep_agent()가 모델을 조립할 때 조회한다.
+    # 따라서 ChatOpenAI(Databricks endpoint)를 만들기 전에 등록해 둔다.
+    register_persona_harness_profile()
     return get_model_provider().get_chat_model()
 
 
