@@ -1,6 +1,6 @@
-# 01–11 통합 지도 — Tool, 실행, 상태, 문맥의 연결
+# 01–17 통합 지도 — Tool, 실행, 상태, 문맥, 조향의 연결
 
-> 범위: Tools(01)부터 Memory(11)까지의 핵심 연결.
+> 범위: Tools(01)부터 Grading rubrics(17)까지의 핵심 연결.
 > 표기: **현재 사용**은 이 persona POC 코드에 연결된 것, **선택지**는 학습한 개념이지만 아직 연결하지 않은 것이다.
 
 ## 1. 한 장으로 보는 전체 관계
@@ -50,6 +50,17 @@ flowchart TB
   Memory --> MemoryFile[Memory files]
   MemoryFile --> Store
   Checkpointer --> Episodic[Episodic thread history]
+
+  Profile[Harness Profile] --> Agent
+  Profile --> ModelTune[Model specific prompt and tools]
+  Agent --> Context[Context engineering]
+  Context --> Compress[Offload and summarize]
+  Agent --> SyncSub[Sync subagents]
+  Agent --> AsyncSub[Async subagents]
+  Sensitive[Side effect tool] --> HITL[Human in the loop]
+  HITL --> Checkpointer
+  Agent --> Trace[Response and tool trajectory]
+  Trace --> Rubric[Grading rubric]
 ```
 
 ### 화살표를 문장으로 읽기
@@ -246,6 +257,35 @@ flowchart TB
   Store --> Namespace[User or agent namespace]
   Thread --> Checkpointer
   Checkpointer --> Episodic[Episodic thread history]
+
+  Input[System prompt memory skills tool prompts] --> ContextEng[Context engineering]
+  Runtime[Runtime context per invoke] --> ContextEng
+  ContextEng --> Agent
+  Agent --> Compression[Offloading and summarization]
+  Agent --> ContextIsolation[Context isolation]
+  ContextIsolation --> SyncSub[Sync subagent]
+  Agent --> AsyncSub[Async subagent job]
+  AsyncSub --> JobId[Job id status update cancel]
+
+  ModelKey[Resolved model key] --> HarnessProfile[Harness Profile]
+  HarnessProfile --> PromptSuffix[System prompt suffix]
+  HarnessProfile --> GP[General purpose subagent setting]
+  PromptSuffix --> Agent
+  GP --> SyncSub
+
+  SensitiveTool[Sensitive custom tool] --> HITL[Human in the loop]
+  HITL --> InterruptOn[interrupt on]
+  InterruptOn --> Pending[Pending tool action]
+  Pending --> Decision[approve edit reject respond]
+  Decision --> Resume[Command resume same thread id]
+  Resume --> Checkpointer
+  Resume --> SensitiveTool
+
+  Agent --> Trajectory[Response and tool trajectory]
+  Direct --> Answer[Phone response]
+  Answer --> Rubric[Grading rubric]
+  Trajectory --> Rubric
+  Rubric --> Evaluation[Quality score and failure reason]
 ```
 
 ### 이 그림을 위에서 아래로 읽기
@@ -259,6 +299,11 @@ flowchart TB
 7. **08·09 Streaming**: `agent.stream()`과 `agent.stream_events()`는 Deep Agent 실행을 내보낸다. 전자는 하나의 iterator chunk를 앱이 `stream_mode`별로 분기하고, 후자는 messages·Tool·subagents 같은 typed projection을 나누어 소비한다. 현재 대신받기는 둘이 아니라 `build_model().stream()`의 text chunk를 SSE `token`/`done`으로 바꾼다. `call_id`는 이 스트림의 이전 통화 이력을 `conversation_store`에서 찾는 key다.
 8. **10 Skills**: Skill은 Tool을 실행하는 권한이 아니라 “어떤 순서와 규칙으로 Tool을 쓸지”라는 절차적 지식이다. Agent는 name·description을 먼저 보고, 필요할 때 `SKILL.md`를 읽는다.
 9. **11 Memory**: `memory=[...]`는 기억으로 읽고 갱신할 파일을 지정한다. `StoreBackend`는 그 파일을 thread 간 보관할 수 있는 Backend다. Checkpointer의 episodic thread history와 장기 Memory 파일은 같은 것이 아니다.
+10. **12 Context engineering**: system prompt·Memory·Skills·Tool 설명은 입력 문맥이고, runtime context는 호출별 설정이다. Deep Agent는 문맥이 길어질 때 offloading·summarization을 쓸 수 있으며, subagent는 무거운 작업의 문맥을 부모에게서 격리한다. 현재 대신받기의 직접 모델 stream에는 이 자동 관리가 없다.
+11. **13 Profiles**: Harness Profile은 `PersonaProfile` 도메인 데이터가 아니라 모델별 Agent 조립 규칙이다. 현재 `databricks-claude-opus-4-6` endpoint는 OpenAI 호환 모델로 해석되어 `openai:databricks-claude-opus-4-6` 키의 Profile이 적용된다. 이 Profile은 Tool 결과 안내를 더하고 기본 general-purpose subagent를 끈다.
+12. **14·15 Delegation**: sync subagent는 부모 Agent가 결과를 기다리는 위임이고, async subagent는 job ID만 받고 진행 상태·갱신·취소를 관리하는 백그라운드 위임이다. 현재 POC에는 사용자 정의 sync/async subagent가 없다. Profile이 자동 기본 sync subagent도 껐다.
+13. **16 HITL**: `interrupt_on`으로 민감 Tool 호출 직전에 멈춘다. 사람의 `approve`·`edit`·`reject`·`respond` 결정은 같은 `thread_id`와 Checkpointer 상태에서 `Command(resume=...)`로 이어진다. 현재는 HITL 미설정이다.
+14. **17 Rubric**: 최종 답변뿐 아니라 Tool trajectory도 Persona 일관성·사실성·개인정보·안전한 실패 같은 제품 행동 기준으로 평가한다. 현재는 평가 실행기를 아직 붙이지 않았고, 단위/loop 테스트와 별개다.
 
 ### 키워드 누락 검사
 
@@ -282,15 +327,27 @@ flowchart TB
 | Skills | 작업 방법·규칙을 단계적으로 읽는 절차적 지식 | 서비스 Agent에는 미설정 |
 | Memory | `memory=[...]`로 지정한 장기 기억 파일 | 미설정 |
 | StoreBackend와 Memory | Memory 파일을 thread 간 보관하는 조합 | 둘 다 미설정 |
+| Context engineering | 입력 문맥·runtime context·압축·문맥 격리의 설계 | 직접 stream 경로에는 미적용 |
+| Offloading / summarization | 큰 Tool 결과를 파일로 빼거나 오래된 문맥을 요약 | Deep Agent 기본 기능, 현재 직접 stream에는 없음 |
+| Harness Profile | 모델별 prompt/tool/middleware/subagent 조립 규칙 | **Databricks Claude endpoint에 사용** |
+| `openai:databricks-claude-opus-4-6` | OpenAI 호환 ChatOpenAI가 해석하는 실제 Profile key | **사용** |
+| Sync subagent | 부모가 결과를 기다리는 문맥 격리 위임 | 사용자 정의 없음, 자동 기본도 Profile로 비활성화 |
+| Async subagent | job ID·상태·갱신·취소를 가진 백그라운드 위임 | 미사용 |
+| Human-in-the-loop | 민감 Tool 직전 interrupt 후 사람 결정 | 미사용 |
+| `approve` / `edit` / `reject` / `respond` | HITL에서 Tool 호출을 재개·수정·취소·대체하는 결정 | 미사용 |
+| Grading rubric | 실제 모델의 답변/Tool trajectory가 제품 행동 계약을 지키는지 평가 | 미사용 |
 
 > 주의: PTC와 Dynamic subagents는 Interpreter runtime의 Beta 기능이다. PTC/`task()` 호출은 일반 Tool 호출 경로와 달라, 일반 Tool별 승인 규칙이 자동으로 각각 적용된다고 가정하면 안 된다.
 
-## 기억할 다섯 문장
+## 기억할 여덟 문장
 
 1. **Tool은 LLM이 호출하는 기능**, Backend는 Built-in 파일 Tool이 작업할 **장소**다.
 2. **Closure는 Custom Tool이 누구의 데이터를 다룰지 서버가 고정하는 방법**이다.
 3. **thread_id는 대화 식별자, Checkpointer는 그 대화의 Agent state snapshot 저장소**다. `app/store/`의 Persona/Character와는 다른 저장 경로다.
 4. **모델 직접 stream은 빠른 텍스트 전달**, Agent stream/Event stream은 Tool·subagent를 포함한 **Agent 실행 관찰**이다.
 5. **Skill은 작업 방법, Memory는 기억할 파일, StoreBackend는 그 파일을 둘 장소**다.
+6. **Context engineering은 모델에 무엇을 얼마나 넣을지의 설계**이며, subagent는 큰 작업 문맥을 격리하는 한 방법이다.
+7. **Harness Profile은 모델별 Agent 조립 규칙**, `PersonaProfile`은 사용자의 도메인 데이터다.
+8. **HITL은 위험한 실행을 멈추는 장치**, Rubric은 실행 후 Agent 행동 품질을 재는 기준표다.
 
-> 공식 참고: [Tools](https://docs.langchain.com/oss/python/deepagents/tools), [Backends](https://docs.langchain.com/oss/python/deepagents/backends), [Event streaming](https://docs.langchain.com/oss/python/deepagents/event-streaming), [Streaming](https://docs.langchain.com/oss/python/deepagents/streaming), [Skills](https://docs.langchain.com/oss/python/deepagents/skills), [Memory](https://docs.langchain.com/oss/python/deepagents/memory)
+> 공식 참고: [Tools](https://docs.langchain.com/oss/python/deepagents/tools), [Backends](https://docs.langchain.com/oss/python/deepagents/backends), [Event streaming](https://docs.langchain.com/oss/python/deepagents/event-streaming), [Streaming](https://docs.langchain.com/oss/python/deepagents/streaming), [Skills](https://docs.langchain.com/oss/python/deepagents/skills), [Memory](https://docs.langchain.com/oss/python/deepagents/memory), [Context engineering](https://docs.langchain.com/oss/python/deepagents/context-engineering), [Profiles](https://docs.langchain.com/oss/python/deepagents/profiles), [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents), [Async subagents](https://docs.langchain.com/oss/python/deepagents/async-subagents), [Human-in-the-loop](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop), [Grading rubrics](https://docs.langchain.com/oss/python/deepagents/grading-rubrics)
