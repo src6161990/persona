@@ -30,6 +30,11 @@ databricks = [
 dev = [
     "pytest>=8.0",
 ]
+# MRF ↔ Persona WebRTC DataChannel 상호운용성 PoC.
+# 기본 API/LLM 개발 환경에는 native WebRTC 의존성을 넣지 않는다.
+webrtc = [
+    "aiortc>=1.14,<2",
+]
 
 [build-system]
 requires = ["hatchling"]

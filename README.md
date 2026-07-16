@@ -61,6 +61,50 @@ LangChain `init_chat_model` 로, Databricks 는 OAuth 토큰 발급 후 `ChatOpe
 | `POST` | `/personas/{user_id}/character/chat` | 멀티턴 채팅으로 캐릭터 수정 |
 | `GET` | `/health` | 헬스체크 |
 
+## WebRTC PCM DataChannel PoC
+
+MRF와 일반 WebRTC peer 연결을 빠르게 검증하기 위한 최소 gateway가 포함되어 있다.
+이 기능은 기본 의존성에서 분리되어 있다.
+
+```bash
+uv sync --extra webrtc
+uv run uvicorn app.main:app --reload
+```
+
+`POST /webrtc/offer`에 `session_id`, SDP `offer`를 보내면 SDP answer를 반환한다.
+PoC gateway는 연결된 DataChannel에서 받은 **binary PCM frame을 변형 없이 echo**한다.
+따라서 MRF가 WebRTC DataChannel으로 PCM을 주는지와 frame 왕복을 먼저 검증할 수 있다.
+
+```json
+{
+  "session_id": "mrf-call-001",
+  "type": "offer",
+  "sdp": "v=0\\r\\n..."
+}
+```
+
+현재 범위는 non-trickle ICE와 PCM echo이며, STT/TTS 및 Harness 연결은 MRF의 실제
+PCM framing 계약이 확정된 뒤 이 gateway의 binary message handler에 붙인다.
+
+MRF 연동 전에는 아래 simulator가 실행 중인 gateway에 실제 SDP offer를 생성·전송하고,
+answer 적용 및 PCM echo까지 확인한다.
+
+```bash
+uv run --extra webrtc python scripts/webrtc_poc_client.py
+```
+
+Simulator 흐름은 아래와 같다.
+
+```text
+1. simulator가 MRF 역할의 PeerConnection과 "pcm" DataChannel을 생성
+2. simulator가 SDP offer 생성
+3. HTTP POST /webrtc/offer 로 offer 전달
+4. Persona gateway의 SDP answer를 simulator에 적용
+5. WebRTC 연결 후 DataChannel이 open되면 PCM binary frame 전송
+6. gateway의 PCM echo 수신 및 bytes 동일성 확인
+7. HTTP DELETE로 Persona 세션과 로컬 peer 종료
+```
+
 ## 구조
 
 ```

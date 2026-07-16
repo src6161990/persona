@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
+from app.api.webrtc_routes import router as webrtc_router
 from app.errors import CharacterNotFound, EmptyBuildInput, PersonaNotFound
 
 app = FastAPI(
@@ -13,6 +14,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(webrtc_router)
 
 
 @app.get("/health", tags=["system"])

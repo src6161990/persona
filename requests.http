@@ -4,6 +4,9 @@
 
 @baseUrl = http://127.0.0.1:8000
 @userId = u1
+@webrtcSessionId = mrf-poc-001
+# 실제 MRF가 보낸 SDP offer 전체를 JSON string 형식(줄바꿈은 \r\n)으로 붙여 넣는다.
+@mrfOfferSdp = REPLACE_WITH_MRF_SDP_OFFER
 
 ### 0) 헬스체크
 GET {{baseUrl}}/health
@@ -97,3 +100,21 @@ Content-Type: application/json
 
 ### (참고) 페르소나 없이 캐릭터 생성 시 404 확인
 POST {{baseUrl}}/personas/unknown-user/character
+
+### 7) MRF WebRTC PCM DataChannel PoC — SDP offer 수락
+### 사전 준비: uv sync --extra webrtc && uv run uvicorn app.main:app --reload
+### @mrfOfferSdp 값을 실제 MRF SDP offer로 교체한 뒤 실행한다.
+### 응답의 sdp/type(answer)는 MRF 측 peer에 setRemoteDescription 한다.
+### 로컬에서 실제 offer/answer + PCM echo를 검증하려면:
+### uv run --extra webrtc python scripts/webrtc_poc_client.py
+POST {{baseUrl}}/webrtc/offer
+Content-Type: application/json
+
+{
+  "session_id": "{{webrtcSessionId}}",
+  "type": "offer",
+  "sdp": "{{mrfOfferSdp}}"
+}
+
+### 8) MRF WebRTC PCM DataChannel PoC — 세션 종료
+DELETE {{baseUrl}}/webrtc/sessions/{{webrtcSessionId}}
